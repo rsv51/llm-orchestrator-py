@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - LLM Orchestrator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .logo {
+            text-align: center;
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input[type="password"],
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-login:active {
+            transform: translateY(0);
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .alert-danger {
+            background: #fee;
+            color: #c33;
+            border: 1px solid #fcc;
+        }
+
+        .alert-info {
+            background: #e7f3ff;
+            color: #0066cc;
+            border: 1px solid #b3d9ff;
+        }
+
+        .help-text {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .help-text a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .help-text a:hover {
+            text-decoration: underline;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
+        .checkbox-group label {
+            margin: 0;
+            font-weight: normal;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">🤖</div>
+        <h1>LLM Orchestrator</h1>
+        <p class="subtitle">管理控制台登录</p>
+
+        <div id="alert" style="display: none;"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="admin-key">管理员密钥</label>
+                <input 
+                    type="password" 
+                    id="admin-key" 
+                    placeholder="请输入管理员密钥"
+                    required
+                    autocomplete="current-password"
+                >
+            </div>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="remember-key" checked>
+                <label for="remember-key">记住密钥</label>
+            </div>
+
+            <button type="submit" class="btn-login">登录</button>
+        </form>
+
+        <div class="help-text">
+            💡 提示: 管理员密钥在 <code>.env</code> 文件中的 <code>ADMIN_KEY</code> 配置
+        </div>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('login-form');
+        const alertDiv = document.getElementById('alert');
+
+        // 检查是否已登录
+        const savedAdminKey = localStorage.getItem('adminKey');
+        if (savedAdminKey) {
+            // 验证密钥是否有效
+            verifyKeyAndRedirect(savedAdminKey);
+        }
+
+        async function verifyKeyAndRedirect(adminKey) {
+            try {
+                const response = await fetch('/admin/providers', {
+                    headers: {
+                        'Authorization': `Bearer ${adminKey}`
+                    }
+                });
+
+                if (response.ok) {
+                    window.location.href = '/admin-ui/index.html';
+                } else {
+                    // 密钥无效,清除存储
+                    localStorage.removeItem('adminKey');
+                }
+            } catch (error) {
+                console.error('Verification failed:', error);
+            }
+        }
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const adminKey = document.getElementById('admin-key').value.trim();
+            const rememberKey = document.getElementById('remember-key').checked;
+
+            if (!adminKey) {
+                showAlert('请输入管理员密钥', 'danger');
+                return;
+            }
+
+            // 显示加载状态
+            const submitBtn = loginForm.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = '验证中...';
+            submitBtn.disabled = true;
+
+            try {
+                // 验证密钥
+                const response = await fetch('/admin/providers', {
+                    headers: {
+                        'Authorization': `Bearer ${adminKey}`
+                    }
+                });
+
+                if (response.ok) {
+                    // 登录成功
+                    if (rememberKey) {
+                        localStorage.setItem('adminKey', adminKey);
+                    } else {
+                        sessionStorage.setItem('adminKey', adminKey);
+                    }
+
+                    showAlert('登录成功,正在跳转...', 'info');
+                    
+                    setTimeout(() => {
+                        window.location.href = '/admin-ui/index.html';
+                    }, 500);
+                } else if (response.status === 401 || response.status === 403) {
+                    showAlert('管理员密钥错误,请重试', 'danger');
+                    submitBtn.textContent = originalText;
+                    submitBtn.disabled = false;
+                } else {
+                    showAlert('登录失败: ' + response.statusText, 'danger');
+                    submitBtn.textContent = originalText;
+                    submitBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Login failed:', error);
+                showAlert('网络错误,请检查服务是否正常运行', 'danger');
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+
+        function showAlert(message, type) {
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            alertDiv.style.display = 'block';
+
+            if (type === 'info') {
+                setTimeout(() => {
+                    alertDiv.style.display = 'none';
+                }, 3000);
+            }
+        }
+    </script>
+</body>
+</html>

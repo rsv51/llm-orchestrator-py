@@ -1,11 +1,20 @@
 // LLM Orchestrator Web 管理界面 JavaScript
 
-// 配置
+// 配置 - 使用相对路径避免跨域问题
 const config = {
-    apiBaseUrl: 'http://localhost:8000',
-    apiKey: localStorage.getItem('apiKey') || '',
-    adminKey: localStorage.getItem('adminKey') || 'admin-key'
+    apiBaseUrl: '',  // 使用相对路径,与当前域名相同
+    apiKey: localStorage.getItem('apiKey') || sessionStorage.getItem('apiKey') || '',
+    adminKey: localStorage.getItem('adminKey') || sessionStorage.getItem('adminKey') || ''
 };
+
+// 检查登录状态
+function checkAuth() {
+    if (!config.adminKey) {
+        window.location.href = '/admin-ui/login.html';
+        return false;
+    }
+    return true;
+}
 
 // 工具函数
 const utils = {
@@ -337,12 +346,16 @@ async function loadLogs() {
 let currentImportType = 'providers';
 
 function exportProviders() {
-    window.open(`${config.apiBaseUrl}/admin/excel/export/providers`, '_blank');
+    // 使用相对路径自动适配域名
+    const url = '/admin/excel/export/providers';
+    window.open(url, '_blank');
     utils.showAlert('正在下载提供商列表...', 'success');
 }
 
 function exportModels() {
-    window.open(`${config.apiBaseUrl}/admin/excel/export/models`, '_blank');
+    // 使用相对路径自动适配域名
+    const url = '/admin/excel/export/models';
+    window.open(url, '_blank');
     utils.showAlert('正在下载模型列表...', 'success');
 }
 
@@ -365,9 +378,10 @@ function showImportModal(type) {
 }
 
 async function downloadTemplate() {
+    // 使用相对路径自动适配域名
     const url = currentImportType === 'providers'
-        ? `${config.apiBaseUrl}/admin/excel/template/providers`
-        : `${config.apiBaseUrl}/admin/excel/template/models`;
+        ? '/admin/excel/template/providers'
+        : '/admin/excel/template/models';
     
     window.open(url, '_blank');
     utils.showAlert('正在下载模板...', 'success');
@@ -400,9 +414,14 @@ async function refreshAll() {
 
 // 初始化
 document.addEventListener('DOMContentLoaded', async () => {
+    // 检查登录状态
+    if (!checkAuth()) {
+        return;
+    }
+    
     // 加载保存的设置
-    const savedApiKey = localStorage.getItem('apiKey');
-    const savedAdminKey = localStorage.getItem('adminKey');
+    const savedApiKey = localStorage.getItem('apiKey') || sessionStorage.getItem('apiKey');
+    const savedAdminKey = localStorage.getItem('adminKey') || sessionStorage.getItem('adminKey');
     
     if (savedApiKey) {
         document.getElementById('api-key').value = savedApiKey;
@@ -419,11 +438,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         document.getElementById('api-status').textContent = 'API 离线';
         document.getElementById('api-status').className = 'badge badge-danger';
+        utils.showAlert('无法连接到 API 服务,请检查服务状态', 'danger');
     }
     
     // 加载仪表盘数据
-    await loadDashboard();
+    try {
+        await loadDashboard();
+    } catch (error) {
+        // 如果是认证错误,跳转到登录页
+        if (error.message.includes('401') || error.message.includes('403')) {
+            localStorage.removeItem('adminKey');
+            sessionStorage.removeItem('adminKey');
+            window.location.href = '/admin-ui/login.html';
+        }
+    }
 });
+
+// 添加登出功能
+function logout() {
+    if (confirm('确定要退出登录吗?')) {
+        localStorage.removeItem('adminKey');
+        sessionStorage.removeItem('adminKey');
+        localStorage.removeItem('apiKey');
+        sessionStorage.removeItem('apiKey');
+        window.location.href = '/admin-ui/login.html';
+    }
+}
 
 // 处理导入表单
 document.getElementById('import-form').addEventListener('submit', async (e) => {
@@ -447,7 +487,8 @@ document.getElementById('import-form').addEventListener('submit', async (e) => {
             ? `/admin/excel/import/providers?skip_duplicates=${skipDuplicates}`
             : `/admin/excel/import/models?skip_duplicates=${skipDuplicates}`;
         
-        const response = await fetch(`${config.apiBaseUrl}${endpoint}`, {
+        // 使用相对路径,不需要 config.apiBaseUrl
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${config.adminKey}`
