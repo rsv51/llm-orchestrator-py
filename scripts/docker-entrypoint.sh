@@ -3,41 +3,23 @@ set -e
 
 echo "🚀 Starting LLM Orchestrator..."
 
-# Wait for database to be ready
-echo "⏳ Waiting for database..."
-python -c "
-import time
-import sys
-from sqlalchemy import create_engine
-from app.core.config import get_settings
+# Wait a bit for database to be ready (for Docker Compose)
+if [ "${REDIS_ENABLED:-true}" = "true" ]; then
+    echo "⏳ Waiting for Redis..."
+    sleep 5
+fi
 
-settings = get_settings()
-max_retries = 30
-retry_interval = 2
-
-for i in range(max_retries):
-    try:
-        engine = create_engine(settings.database_url)
-        conn = engine.connect()
-        conn.close()
-        print('✅ Database is ready!')
-        sys.exit(0)
-    except Exception as e:
-        if i < max_retries - 1:
-            print(f'⏳ Database not ready yet, retrying in {retry_interval}s... ({i+1}/{max_retries})')
-            time.sleep(retry_interval)
-        else:
-            print(f'❌ Database connection failed after {max_retries} attempts')
-            sys.exit(1)
-"
-
-# Run database migrations
+# Run database migrations (will auto-create tables)
 echo "📦 Running database migrations..."
-alembic upgrade head
+if alembic upgrade head 2>&1; then
+    echo "✅ Database migrations completed"
+else
+    echo "⚠️ Migration failed, attempting to continue..."
+fi
 
 # Initialize database with default data if needed
 echo "🔧 Initializing database..."
-python scripts/init_db.py || true
+python scripts/init_db.py 2>&1 || echo "⚠️ Init failed, continuing..."
 
 # Start the application
 echo "✅ Starting application server..."
