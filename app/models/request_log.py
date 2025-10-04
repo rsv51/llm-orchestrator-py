@@ -41,7 +41,6 @@ class RequestLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     
     __table_args__ = (
-        Index('idx_provider_status', 'provider_name', 'status'),
-        Index('idx_created_at', 'created_at'),
-        Index('idx_name_status', 'name', 'status'),
+        Index('idx_provider_status_code', 'provider_id', 'status_code'),
+        Index('idx_model_status_code', 'model', 'status_code'),
     )
