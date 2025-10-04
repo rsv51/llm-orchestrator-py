@@ -90,22 +90,32 @@ class BaseProvider(ABC):
     @abstractmethod
     async def chat_completion(
         self,
-        messages: list[Dict[str, Any]],
-        model: str,
-        stream: bool = False,
-        **kwargs
-    ) -> Dict[str, Any] | AsyncGenerator[str, None]:
+        request: 'ChatCompletionRequest'
+    ) -> 'ChatCompletionResponse':
         """
         Send chat completion request.
         
         Args:
-            messages: List of message dictionaries
-            model: Model name
-            stream: Whether to stream response
-            **kwargs: Additional parameters
+            request: Chat completion request object
             
         Returns:
-            Response dict or async generator for streaming
+            Chat completion response
+        """
+        pass
+    
+    @abstractmethod
+    async def chat_completion_stream(
+        self,
+        request: 'ChatCompletionRequest'
+    ) -> AsyncGenerator[str, None]:
+        """
+        Send streaming chat completion request.
+        
+        Args:
+            request: Chat completion request object
+            
+        Yields:
+            Server-sent event chunks
         """
         pass
     

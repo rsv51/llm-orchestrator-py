@@ -4,7 +4,7 @@ Google Gemini provider implementation.
 from typing import AsyncGenerator, Dict, Any, Optional
 import httpx
 
-from app.providers.base import BaseProvider
+from app.providers.base import BaseProvider, ProviderConfig
 from app.api.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -25,26 +25,23 @@ class GeminiProvider(BaseProvider):
     Supports Gemini Pro, Gemini Pro Vision, and other Gemini models.
     """
     
-    def __init__(
-        self,
-        api_key: str,
-        base_url: Optional[str] = None,
-        timeout: int = 60
-    ):
+    def __init__(self, config: ProviderConfig):
         """
         Initialize Gemini provider.
         
         Args:
-            api_key: Google AI API key
-            base_url: Base URL (default: https://generativelanguage.googleapis.com)
-            timeout: Request timeout in seconds
+            config: Provider configuration
         """
-        super().__init__(
-            api_key,
-            base_url or "https://generativelanguage.googleapis.com",
-            timeout
-        )
+        super().__init__(config)
         self.api_version = "v1beta"
+    
+    @property
+    def provider_type(self) -> str:
+        return "gemini"
+    
+    @property
+    def default_base_url(self) -> str:
+        return "https://generativelanguage.googleapis.com"
     
     async def chat_completion(
         self,
@@ -67,17 +64,17 @@ class GeminiProvider(BaseProvider):
         url = f"{self.base_url}/{self.api_version}/models/{model_name}:generateContent"
         
         # Add API key as query parameter
-        params = {"key": self.api_key}
+        params = {"key": self.config.api_key}
         
         # Send request
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                url,
-                json=gemini_request,
-                params=params
-            )
-            response.raise_for_status()
-            data = response.json()
+        client = await self.get_client()
+        response = await client.post(
+            url,
+            json=gemini_request,
+            params=params
+        )
+        response.raise_for_status()
+        data = response.json()
         
         # Convert Gemini response to OpenAI format
         return self._convert_from_gemini_format(data, request.model)
@@ -103,40 +100,40 @@ class GeminiProvider(BaseProvider):
         url = f"{self.base_url}/{self.api_version}/models/{model_name}:streamGenerateContent"
         
         # Add API key
-        params = {"key": self.api_key, "alt": "sse"}
+        params = {"key": self.config.api_key, "alt": "sse"}
         
         # Send streaming request
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream(
-                "POST",
-                url,
-                json=gemini_request,
-                params=params
-            ) as response:
-                response.raise_for_status()
+        client = await self.get_client()
+        async with client.stream(
+            "POST",
+            url,
+            json=gemini_request,
+            params=params
+        ) as response:
+            response.raise_for_status()
+            
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
                 
-                async for line in response.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
+                # Remove "data: " prefix
+                data_str = line[6:]
+                
+                if data_str == "[DONE]":
+                    yield "data: [DONE]\n\n"
+                    break
+                
+                # Convert Gemini chunk to OpenAI format
+                try:
+                    import json
+                    chunk_data = json.loads(data_str)
+                    openai_chunk = self._convert_stream_chunk(chunk_data, request.model)
                     
-                    # Remove "data: " prefix
-                    data_str = line[6:]
-                    
-                    if data_str == "[DONE]":
-                        yield "data: [DONE]\n\n"
-                        break
-                    
-                    # Convert Gemini chunk to OpenAI format
-                    try:
-                        import json
-                        chunk_data = json.loads(data_str)
-                        openai_chunk = self._convert_stream_chunk(chunk_data, request.model)
-                        
-                        if openai_chunk:
-                            yield f"data: {json.dumps(openai_chunk)}\n\n"
-                    except Exception as e:
-                        logger.warning(f"Failed to parse stream chunk: {e}")
-                        continue
+                    if openai_chunk:
+                        yield f"data: {json.dumps(openai_chunk)}\n\n"
+                except Exception as e:
+                    logger.warning(f"Failed to parse stream chunk: {e}")
+                    continue
     
     def _convert_to_gemini_format(
         self,

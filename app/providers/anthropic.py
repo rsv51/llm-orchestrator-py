@@ -4,7 +4,7 @@ Anthropic Claude provider implementation.
 from typing import AsyncGenerator, Dict, Any, Optional
 import httpx
 
-from app.providers.base import BaseProvider
+from app.providers.base import BaseProvider, ProviderConfig
 from app.api.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -25,22 +25,23 @@ class AnthropicProvider(BaseProvider):
     Supports Claude 3 (Opus, Sonnet, Haiku) and Claude 2 models.
     """
     
-    def __init__(
-        self,
-        api_key: str,
-        base_url: Optional[str] = None,
-        timeout: int = 60
-    ):
+    def __init__(self, config: ProviderConfig):
         """
         Initialize Anthropic provider.
         
         Args:
-            api_key: Anthropic API key
-            base_url: Base URL (default: https://api.anthropic.com)
-            timeout: Request timeout in seconds
+            config: Provider configuration
         """
-        super().__init__(api_key, base_url or "https://api.anthropic.com", timeout)
+        super().__init__(config)
         self.api_version = "2023-06-01"
+    
+    @property
+    def provider_type(self) -> str:
+        return "anthropic"
+    
+    @property
+    def default_base_url(self) -> str:
+        return "https://api.anthropic.com"
     
     async def chat_completion(
         self,
@@ -61,19 +62,19 @@ class AnthropicProvider(BaseProvider):
         # Send request
         url = f"{self.base_url}/v1/messages"
         headers = {
-            "x-api-key": self.api_key,
+            "x-api-key": self.config.api_key,
             "anthropic-version": self.api_version,
             "content-type": "application/json"
         }
         
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                url,
-                json=anthropic_request,
-                headers=headers
-            )
-            response.raise_for_status()
-            data = response.json()
+        client = await self.get_client()
+        response = await client.post(
+            url,
+            json=anthropic_request,
+            headers=headers
+        )
+        response.raise_for_status()
+        data = response.json()
         
         # Convert Anthropic response to OpenAI format
         return self._convert_from_anthropic_format(data, request.model)
@@ -98,42 +99,42 @@ class AnthropicProvider(BaseProvider):
         # Send streaming request
         url = f"{self.base_url}/v1/messages"
         headers = {
-            "x-api-key": self.api_key,
+            "x-api-key": self.config.api_key,
             "anthropic-version": self.api_version,
             "content-type": "application/json"
         }
         
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream(
-                "POST",
-                url,
-                json=anthropic_request,
-                headers=headers
-            ) as response:
-                response.raise_for_status()
+        client = await self.get_client()
+        async with client.stream(
+            "POST",
+            url,
+            json=anthropic_request,
+            headers=headers
+        ) as response:
+            response.raise_for_status()
+            
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
                 
-                async for line in response.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
+                # Remove "data: " prefix
+                data_str = line[6:]
+                
+                if data_str == "[DONE]":
+                    yield "data: [DONE]\n\n"
+                    break
+                
+                # Convert Anthropic event to OpenAI format
+                try:
+                    import json
+                    event_data = json.loads(data_str)
+                    openai_chunk = self._convert_stream_chunk(event_data, request.model)
                     
-                    # Remove "data: " prefix
-                    data_str = line[6:]
-                    
-                    if data_str == "[DONE]":
-                        yield "data: [DONE]\n\n"
-                        break
-                    
-                    # Convert Anthropic event to OpenAI format
-                    try:
-                        import json
-                        event_data = json.loads(data_str)
-                        openai_chunk = self._convert_stream_chunk(event_data, request.model)
-                        
-                        if openai_chunk:
-                            yield f"data: {json.dumps(openai_chunk)}\n\n"
-                    except Exception as e:
-                        logger.warning(f"Failed to parse stream chunk: {e}")
-                        continue
+                    if openai_chunk:
+                        yield f"data: {json.dumps(openai_chunk)}\n\n"
+                except Exception as e:
+                    logger.warning(f"Failed to parse stream chunk: {e}")
+                    continue
     
     def _convert_to_anthropic_format(
         self,

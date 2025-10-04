@@ -6,6 +6,7 @@ import json
 import httpx
 
 from app.providers.base import BaseProvider, ProviderConfig
+from app.api.schemas import ChatCompletionRequest, ChatCompletionResponse, ChatCompletionChoice, ChatMessage, Usage, MessageRole
 from app.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,33 +31,56 @@ class OpenAIProvider(BaseProvider):
     
     async def chat_completion(
         self,
-        messages: list[Dict[str, Any]],
-        model: str,
-        stream: bool = False,
-        **kwargs
-    ) -> Dict[str, Any] | AsyncGenerator[str, None]:
+        request: ChatCompletionRequest
+    ) -> ChatCompletionResponse:
         """
         Send chat completion request to OpenAI.
         
         Args:
-            messages: Chat messages
-            model: Model name
-            stream: Whether to stream response
-            **kwargs: Additional parameters (temperature, max_tokens, etc.)
+            request: Chat completion request
             
         Returns:
-            Response dict or async generator for streaming
+            Chat completion response
         """
         # Resolve model name using aliases
-        resolved_model = self.config.resolve_model(model)
+        resolved_model = self.config.resolve_model(request.model)
         
-        # Prepare request payload
+        # Prepare request payload - convert Pydantic models to dict
         payload = {
             "model": resolved_model,
-            "messages": messages,
-            "stream": stream,
-            **kwargs
+            "messages": [msg.model_dump() for msg in request.messages],
+            "stream": False
         }
+        
+        # Add optional parameters
+        if request.temperature is not None:
+            payload["temperature"] = request.temperature
+        if request.top_p is not None:
+            payload["top_p"] = request.top_p
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+        if request.presence_penalty is not None:
+            payload["presence_penalty"] = request.presence_penalty
+        if request.frequency_penalty is not None:
+            payload["frequency_penalty"] = request.frequency_penalty
+        if request.stop is not None:
+            payload["stop"] = request.stop
+        if request.user is not None:
+            payload["user"] = request.user
+        
+        # ✅ Support for tool calling
+        if request.tools is not None:
+            payload["tools"] = [tool.model_dump() for tool in request.tools]
+        if request.tool_choice is not None:
+            payload["tool_choice"] = request.tool_choice
+        
+        # ✅ Support for structured output
+        if request.response_format is not None:
+            payload["response_format"] = request.response_format
+        
+        # Support for seed
+        if request.seed is not None:
+            payload["seed"] = request.seed
         
         # Apply parameter overrides
         payload = self.apply_parameter_overrides(payload)
@@ -67,36 +91,114 @@ class OpenAIProvider(BaseProvider):
         
         logger.info(
             "Sending OpenAI chat completion request",
-            model=resolved_model,
-            stream=stream
+            extra={"model": resolved_model, "has_tools": request.tools is not None}
         )
         
-        if stream:
-            return self._stream_response(client, url, headers, payload)
-        else:
-            return await self._non_stream_response(client, url, headers, payload)
+        return await self._non_stream_response(client, url, headers, payload, request.model)
+    
+    async def chat_completion_stream(
+        self,
+        request: ChatCompletionRequest
+    ) -> AsyncGenerator[str, None]:
+        """
+        Send streaming chat completion request to OpenAI.
+        
+        Args:
+            request: Chat completion request
+            
+        Yields:
+            Server-sent event chunks
+        """
+        # Resolve model name
+        resolved_model = self.config.resolve_model(request.model)
+        
+        # Prepare payload
+        payload = {
+            "model": resolved_model,
+            "messages": [msg.model_dump() for msg in request.messages],
+            "stream": True
+        }
+        
+        # Add all optional parameters (same as non-streaming)
+        if request.temperature is not None:
+            payload["temperature"] = request.temperature
+        if request.top_p is not None:
+            payload["top_p"] = request.top_p
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens
+        if request.presence_penalty is not None:
+            payload["presence_penalty"] = request.presence_penalty
+        if request.frequency_penalty is not None:
+            payload["frequency_penalty"] = request.frequency_penalty
+        if request.stop is not None:
+            payload["stop"] = request.stop
+        if request.user is not None:
+            payload["user"] = request.user
+        if request.tools is not None:
+            payload["tools"] = [tool.model_dump() for tool in request.tools]
+        if request.tool_choice is not None:
+            payload["tool_choice"] = request.tool_choice
+        if request.response_format is not None:
+            payload["response_format"] = request.response_format
+        if request.seed is not None:
+            payload["seed"] = request.seed
+        
+        payload = self.apply_parameter_overrides(payload)
+        
+        client = await self.get_client()
+        url = f"{self.base_url}/chat/completions"
+        headers = self.prepare_headers()
+        
+        async for chunk in self._stream_response(client, url, headers, payload):
+            yield chunk
     
     async def _non_stream_response(
         self,
         client: httpx.AsyncClient,
         url: str,
         headers: Dict[str, str],
-        payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        payload: Dict[str, Any],
+        original_model: str
+    ) -> ChatCompletionResponse:
         """Handle non-streaming response."""
         try:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            
+            # Convert to ChatCompletionResponse
+            return ChatCompletionResponse(
+                id=data.get("id", "unknown"),
+                object=data.get("object", "chat.completion"),
+                created=data.get("created", 0),
+                model=original_model,
+                choices=[
+                    ChatCompletionChoice(
+                        index=choice.get("index", 0),
+                        message=ChatMessage(
+                            role=MessageRole(choice["message"]["role"]),
+                            content=choice["message"].get("content"),
+                            tool_calls=choice["message"].get("tool_calls"),
+                            function_call=choice["message"].get("function_call")
+                        ),
+                        finish_reason=choice.get("finish_reason")
+                    )
+                    for choice in data.get("choices", [])
+                ],
+                usage=Usage(
+                    prompt_tokens=data.get("usage", {}).get("prompt_tokens", 0),
+                    completion_tokens=data.get("usage", {}).get("completion_tokens", 0),
+                    total_tokens=data.get("usage", {}).get("total_tokens", 0)
+                ) if data.get("usage") else None
+            )
         except httpx.HTTPStatusError as e:
             logger.error(
                 "OpenAI API error",
-                status_code=e.response.status_code,
-                error=e.response.text
+                extra={"status_code": e.response.status_code, "error": e.response.text}
             )
             raise
         except Exception as e:
-            logger.error("OpenAI request failed", error=str(e))
+            logger.error("OpenAI request failed", extra={"error": str(e)})
             raise
     
     async def _stream_response(
@@ -119,17 +221,18 @@ class OpenAIProvider(BaseProvider):
                     if line.startswith("data: "):
                         data = line[6:].strip()  # Remove "data: " prefix
                         if data == "[DONE]":
+                            yield "data: [DONE]\n\n"
                             break
                         if data:  # Only yield non-empty data
-                            yield data
+                            yield f"data: {data}\n\n"
         except httpx.HTTPStatusError as e:
             logger.error(
                 "OpenAI streaming error",
-                status_code=e.response.status_code
+                extra={"status_code": e.response.status_code}
             )
             raise
         except Exception as e:
-            logger.error("OpenAI streaming failed", error=str(e))
+            logger.error("OpenAI streaming failed", extra={"error": str(e)})
             raise
     
     async def get_models(self) -> list[str]:
