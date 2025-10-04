@@ -3,6 +3,7 @@ Chat completion API routes (OpenAI compatible).
 """
 import time
 import uuid
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -112,15 +113,82 @@ async def create_chat_completion(
         
         # Route request to provider with failover support
         if request.stream:
-            # Handle streaming response
+            # Handle streaming response with state tracking
+            stream_state = {
+                "last_chunk": None,
+                "provider": None,
+                "start_time": start_time
+            }
+            
+            async def tracked_stream():
+                """Wrapper generator that tracks state for logging."""
+                try:
+                    async for chunk in router_service.route_streaming_request(
+                        provider_name=provider_name,
+                        request=request,
+                        request_id=request_id,
+                        api_key=api_key,
+                        client_ip=client_ip
+                    ):
+                        # Track last chunk for usage extraction
+                        if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                            stream_state["last_chunk"] = chunk
+                        yield chunk
+                finally:
+                    # Log after stream completes
+                    from app.services.router import RequestRouter
+                    from app.models.provider import Provider
+                    from sqlalchemy import select
+                    
+                    try:
+                        # Get provider info
+                        query = select(Provider).where(Provider.name == provider_name, Provider.enabled == True)
+                        result = await db.execute(query)
+                        provider = result.scalar_one_or_none()
+                        
+                        if provider:
+                            # Extract usage from last chunk
+                            usage_info = None
+                            if stream_state["last_chunk"]:
+                                try:
+                                    data_str = stream_state["last_chunk"][6:].strip()
+                                    data = json.loads(data_str)
+                                    if "usage" in data and data["usage"].get("total_tokens", 0) > 0:
+                                        usage_info = data["usage"]
+                                        logger.debug(
+                                            f"Extracted usage: {usage_info.get('total_tokens')} tokens"
+                                        )
+                                except:
+                                    pass
+                            
+                            # Create log entry
+                            from app.models.request_log import RequestLog
+                            latency_ms = int((time.time() - stream_state["start_time"]) * 1000)
+                            log_entry = RequestLog(
+                                provider_id=provider.id,
+                                model=request.model,
+                                endpoint="/v1/chat/completions",
+                                method="POST",
+                                status_code=200,
+                                prompt_tokens=usage_info.get("prompt_tokens") if usage_info else None,
+                                completion_tokens=usage_info.get("completion_tokens") if usage_info else None,
+                                total_tokens=usage_info.get("total_tokens") if usage_info else None,
+                                latency_ms=latency_ms,
+                                user_id=api_key,
+                                ip_address=client_ip
+                            )
+                            db.add(log_entry)
+                            await db.commit()
+                            
+                            logger.info(
+                                f"Streaming logged: tokens={usage_info.get('total_tokens') if usage_info else 0}"
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to log streaming request: {str(e)}")
+                        await db.rollback()
+            
             return StreamingResponse(
-                router_service.route_streaming_request(
-                    provider_name=provider_name,
-                    request=request,
-                    request_id=request_id,
-                    api_key=api_key,
-                    client_ip=client_ip
-                ),
+                tracked_stream(),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
