@@ -60,13 +60,42 @@
             font-size: 24px;
             font-weight: bold;
             color: var(--primary-color);
-            text-decoration: none;
         }
 
         .header-actions {
             display: flex;
             gap: 15px;
             align-items: center;
+        }
+
+        /* Navigation Tabs */
+        .nav-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .nav-tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .nav-tab:hover {
+            color: var(--primary-color);
+        }
+
+        .nav-tab.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
         }
 
         /* Page Title */
@@ -204,6 +233,11 @@
         .badge-danger {
             background: #fee2e2;
             color: #991b1b;
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
         }
 
         /* Modal */
@@ -358,8 +392,11 @@
     <!-- Header -->
     <div class="header">
         <div class="header-content">
-            <a href="index.html" class="logo">🤖 LLM Orchestrator</a>
+            <div class="logo">🤖 LLM Orchestrator</div>
             <div class="header-actions">
+                <button class="btn btn-primary btn-sm" onclick="window.location.href='index.html'">
+                    <span>🏠</span> 返回主页
+                </button>
                 <button class="btn btn-danger btn-sm" onclick="logout()">
                     <span>🚪</span> 退出
                 </button>
@@ -369,6 +406,16 @@
 
     <!-- Main Container -->
     <div class="container">
+        <!-- Navigation Tabs -->
+        <div class="nav-tabs">
+            <button class="nav-tab" onclick="window.location.href='index.html'">仪表盘</button>
+            <button class="nav-tab" onclick="window.location.href='index.html#providers'">提供商管理</button>
+            <button class="nav-tab" onclick="window.location.href='index.html#models'">模型配置</button>
+            <button class="nav-tab active">模型-提供商关联</button>
+            <button class="nav-tab" onclick="window.location.href='index.html#logs'">请求日志</button>
+            <button class="nav-tab" onclick="window.location.href='index.html#settings'">系统设置</button>
+        </div>
+
         <h1 class="page-title">模型-提供商关联管理</h1>
 
         <!-- Controls -->
@@ -454,8 +501,8 @@
                     <input type="checkbox" id="enabled" checked>
                     <label for="enabled">启用</label>
                 </div>
-                <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="button" class="btn" onclick="closeModal()">取消</button>
+                <div style="display: flex; gap: 10px; margin-top: 24px;">
+                    <button type="button" class="btn" style="background: var(--bg-color); color: var(--text-primary);" onclick="closeModal()">取消</button>
                     <button type="submit" class="btn btn-primary">
                         <span id="submit-text">创建</span>
                     </button>

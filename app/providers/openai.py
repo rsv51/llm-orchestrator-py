@@ -112,7 +112,9 @@ class OpenAIProvider(BaseProvider):
         payload = {
             "model": resolved_model,
             "messages": [msg.model_dump(exclude_none=True) for msg in request.messages],
-            "stream": True
+            "stream": True,
+            # ✅ Request usage info in streaming response
+            "stream_options": {"include_usage": True}
         }
         
         # Helper function to add non-None and non-empty values

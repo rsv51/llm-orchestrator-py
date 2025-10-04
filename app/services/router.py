@@ -3,7 +3,8 @@ Request router for handling LLM API requests with failover.
 """
 import time
 import asyncio
-from typing import Optional, AsyncGenerator, List
+import json
+from typing import Optional, AsyncGenerator, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import RedisCache
@@ -229,7 +230,7 @@ class RequestRouter:
         client_ip: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """
-        Route streaming request to provider.
+        Route streaming request to provider with Token usage tracking.
         
         Args:
             provider_name: Target provider name
@@ -248,6 +249,9 @@ class RequestRouter:
         if not provider:
             raise Exception(f"Provider {provider_name} not found")
         
+        # Track usage info from streaming response
+        usage_info: Optional[Dict[str, Any]] = None
+        
         try:
             # Create provider instance
             provider_instance = self.provider_factory.create_provider(
@@ -257,16 +261,27 @@ class RequestRouter:
                 timeout=request.timeout or provider.timeout
             )
             
-            # Stream response
+            # Stream response and extract usage from final chunk
             async for chunk in provider_instance.chat_completion_stream(request):
+                # Parse chunk to extract usage info
+                if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                    try:
+                        data_str = chunk[6:].strip()
+                        data = json.loads(data_str)
+                        # Extract usage from chunk if present
+                        if "usage" in data:
+                            usage_info = data["usage"]
+                    except (json.JSONDecodeError, KeyError):
+                        pass  # Ignore parsing errors
+                
                 yield chunk
             
-            # Log successful streaming request
+            # Log successful streaming request with usage info
             latency_ms = int((time.time() - start_time) * 1000)
-            await self._log_request(
+            await self._log_streaming_request(
                 provider_id=provider.id,
                 request=request,
-                response=None,  # No response object for streaming
+                usage_info=usage_info,
                 latency_ms=latency_ms,
                 api_key=api_key,
                 client_ip=client_ip
@@ -355,6 +370,58 @@ class RequestRouter:
         
         except Exception as e:
             logger.error(f"Failed to log request: {str(e)}")
+            await self.db.rollback()
+    
+    async def _log_streaming_request(
+        self,
+        provider_id: int,
+        request: ChatCompletionRequest,
+        usage_info: Optional[Dict[str, Any]],
+        latency_ms: int,
+        api_key: Optional[str],
+        client_ip: Optional[str]
+    ):
+        """
+        Log successful streaming request with Token usage.
+        
+        Args:
+            provider_id: Provider ID
+            request: Request object
+            usage_info: Usage information from final chunk
+            latency_ms: Request latency in milliseconds
+            api_key: User API key
+            client_ip: Client IP address
+        """
+        try:
+            log_entry = RequestLog(
+                provider_id=provider_id,
+                model=request.model,
+                endpoint="/v1/chat/completions",
+                method="POST",
+                status_code=200,
+                prompt_tokens=usage_info.get("prompt_tokens") if usage_info else None,
+                completion_tokens=usage_info.get("completion_tokens") if usage_info else None,
+                total_tokens=usage_info.get("total_tokens") if usage_info else None,
+                latency_ms=latency_ms,
+                user_id=api_key,
+                ip_address=client_ip
+            )
+            
+            self.db.add(log_entry)
+            await self.db.commit()
+            
+            if usage_info:
+                logger.debug(
+                    "Streaming request logged with usage",
+                    extra={
+                        "prompt_tokens": usage_info.get("prompt_tokens"),
+                        "completion_tokens": usage_info.get("completion_tokens"),
+                        "total_tokens": usage_info.get("total_tokens")
+                    }
+                )
+        
+        except Exception as e:
+            logger.error(f"Failed to log streaming request: {str(e)}")
             await self.db.rollback()
     
     async def _log_failed_request(
