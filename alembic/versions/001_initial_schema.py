@@ -78,26 +78,27 @@ def upgrade() -> None:
     op.create_table(
         'request_logs',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('provider_id', sa.Integer(), nullable=False),
+        sa.Column('provider_id', sa.Integer(), nullable=True),
         sa.Column('model', sa.String(100), nullable=True),
         sa.Column('endpoint', sa.String(255), nullable=True),
         sa.Column('method', sa.String(10), nullable=True),
         sa.Column('status_code', sa.Integer(), nullable=True),
-        sa.Column('prompt_tokens', sa.Integer(), nullable=True),
-        sa.Column('completion_tokens', sa.Integer(), nullable=True),
-        sa.Column('total_tokens', sa.Integer(), nullable=True),
-        sa.Column('cost', sa.Float(), nullable=True),
-        sa.Column('latency_ms', sa.Integer(), nullable=True),
         sa.Column('error_message', sa.Text(), nullable=True),
+        sa.Column('latency_ms', sa.Integer(), nullable=True),
+        sa.Column('prompt_tokens', sa.Integer(), nullable=True, server_default='0'),
+        sa.Column('completion_tokens', sa.Integer(), nullable=True, server_default='0'),
+        sa.Column('total_tokens', sa.Integer(), nullable=True, server_default='0'),
+        sa.Column('cost', sa.Float(), nullable=True),
         sa.Column('user_id', sa.String(100), nullable=True),
         sa.Column('ip_address', sa.String(50), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.ForeignKeyConstraint(['provider_id'], ['providers.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_request_log_provider', 'request_logs', ['provider_id'])
+    op.create_index('ix_request_logs_model', 'request_logs', ['model'])
+    op.create_index('ix_request_logs_status_code', 'request_logs', ['status_code'])
+    op.create_index('ix_request_logs_provider_id', 'request_logs', ['provider_id'])
+    op.create_index('ix_request_logs_user_id', 'request_logs', ['user_id'])
     op.create_index('idx_request_log_created', 'request_logs', ['created_at'])
-    op.create_index('idx_request_log_user', 'request_logs', ['user_id'])
     
     # Create provider_health table
     op.create_table(
@@ -105,32 +106,54 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('provider_id', sa.Integer(), nullable=False),
         sa.Column('is_healthy', sa.Boolean(), nullable=True, server_default='1'),
-        sa.Column('response_time_ms', sa.Float(), nullable=True),
-        sa.Column('error_message', sa.Text(), nullable=True),
-        sa.Column('last_check', sa.DateTime(), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.Column('consecutive_failures', sa.Integer(), nullable=True, server_default='0'),
-        sa.Column('success_rate', sa.Float(), nullable=True, server_default='100.0'),
+        sa.Column('error_count', sa.Integer(), nullable=True, server_default='0'),
+        sa.Column('last_error', sa.Text(), nullable=True),
+        sa.Column('last_status_code', sa.Integer(), nullable=True),
+        sa.Column('last_validated_at', sa.DateTime(), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')),
+        sa.Column('last_success_at', sa.DateTime(), nullable=True),
+        sa.Column('next_retry_at', sa.DateTime(), nullable=True),
+        sa.Column('consecutive_successes', sa.Integer(), nullable=True, server_default='0'),
         sa.ForeignKeyConstraint(['provider_id'], ['providers.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_provider_health_provider_id', 'provider_health', ['provider_id'], unique=True)
+    op.create_index('ix_provider_health_is_healthy', 'provider_health', ['is_healthy'])
+    op.create_index('ix_provider_health_last_validated_at', 'provider_health', ['last_validated_at'])
+    op.create_index('ix_provider_health_next_retry_at', 'provider_health', ['next_retry_at'])
+    op.create_index('idx_health_provider_status', 'provider_health', ['provider_id', 'is_healthy'])
     
-    # Create provider_stats table
+    # Create provider_stats table (daily statistics)
     op.create_table(
         'provider_stats',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('provider_id', sa.Integer(), nullable=False),
+        sa.Column('date', sa.Date(), nullable=False),
         sa.Column('total_requests', sa.Integer(), nullable=True, server_default='0'),
-        sa.Column('successful_requests', sa.Integer(), nullable=True, server_default='0'),
+        sa.Column('success_requests', sa.Integer(), nullable=True, server_default='0'),
         sa.Column('failed_requests', sa.Integer(), nullable=True, server_default='0'),
         sa.Column('total_tokens', sa.Integer(), nullable=True, server_default='0'),
-        sa.Column('total_cost', sa.Float(), nullable=True, server_default='0.0'),
-        sa.Column('avg_latency_ms', sa.Float(), nullable=True, server_default='0.0'),
-        sa.Column('last_updated', sa.DateTime(), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')),
+        sa.Column('prompt_tokens', sa.Integer(), nullable=True, server_default='0'),
+        sa.Column('completion_tokens', sa.Integer(), nullable=True, server_default='0'),
+        sa.Column('avg_response_time', sa.Float(), nullable=True, server_default='0.0'),
+        sa.Column('last_used_at', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['provider_id'], ['providers.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('ix_provider_stats_provider_id', 'provider_stats', ['provider_id'], unique=True)
+    op.create_index('ix_provider_stats_date', 'provider_stats', ['date'])
+    op.create_index('ix_provider_stats_last_used_at', 'provider_stats', ['last_used_at'])
+    op.create_index('idx_provider_date', 'provider_stats', ['provider_id', 'date'], unique=True)
+    
+    # Create health_check_config table
+    op.create_table(
+        'health_check_config',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('enabled', sa.Boolean(), nullable=True, server_default='1'),
+        sa.Column('interval_minutes', sa.Integer(), nullable=True, server_default='5'),
+        sa.Column('max_error_count', sa.Integer(), nullable=True, server_default='5'),
+        sa.Column('retry_after_hours', sa.Integer(), nullable=True, server_default='1'),
+        sa.Column('updated_at', sa.DateTime(), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')),
+        sa.PrimaryKeyConstraint('id')
+    )
 
 
 def downgrade() -> None:
