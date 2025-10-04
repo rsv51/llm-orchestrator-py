@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import RedisCache
 from app.core.logger import get_logger
-from app.models.provider import Provider
+from app.models.provider import Provider, ModelConfig, ModelProvider
 from app.models.health import ProviderHealth
 
 logger = get_logger(__name__)
@@ -44,14 +44,14 @@ class LoadBalancer:
         Select a provider using weighted random algorithm.
         
         Args:
-            model: Model name (optional, for future model-specific routing)
+            model: Model name (required for model-specific routing)
             fallback_providers: List of fallback provider names to try in order
             
         Returns:
             Selected provider name
             
         Raises:
-            Exception: If no healthy providers available
+            Exception: If no healthy providers available for the model
         """
         # Try cache first
         cache_key = f"balancer:providers:{model or 'default'}"
@@ -61,11 +61,14 @@ class LoadBalancer:
             providers_data = cached_providers
             logger.debug("Using cached providers list")
         else:
-            # Query healthy providers
-            providers_data = await self._get_healthy_providers()
+            # Query healthy providers that support the model
+            if model:
+                providers_data = await self._get_healthy_providers_for_model(model)
+            else:
+                providers_data = await self._get_healthy_providers()
             
             if not providers_data:
-                raise Exception("No healthy providers available")
+                raise Exception(f"No healthy providers available for model: {model}")
             
             # Cache for 30 seconds
             await self.cache.set(cache_key, providers_data, ttl=30)
@@ -124,7 +127,7 @@ class LoadBalancer:
     
     async def _get_healthy_providers(self) -> List[Dict]:
         """
-        Get list of healthy providers from database.
+        Get list of ALL healthy providers from database (no model filtering).
         
         Returns:
             List of provider data dictionaries
@@ -154,6 +157,61 @@ class LoadBalancer:
                     "priority": provider.priority,
                     "is_healthy": is_healthy
                 })
+        
+        return providers_data
+    
+    async def _get_healthy_providers_for_model(self, model_name: str) -> List[Dict]:
+        """
+        Get list of healthy providers that support the specified model.
+        
+        Args:
+            model_name: Model name to filter by
+            
+        Returns:
+            List of provider data dictionaries that support the model
+        """
+        # Query providers that support this model
+        query = (
+            select(Provider, ProviderHealth, ModelProvider)
+            .join(ModelProvider, Provider.id == ModelProvider.provider_id)
+            .join(ModelConfig, ModelProvider.model_id == ModelConfig.id)
+            .join(ProviderHealth, Provider.id == ProviderHealth.provider_id, isouter=True)
+            .where(
+                Provider.enabled == True,
+                ModelConfig.name == model_name,
+                ModelConfig.enabled == True,
+                ModelProvider.enabled == True
+            )
+            .order_by(Provider.priority.desc())
+        )
+        
+        result = await self.db.execute(query)
+        rows = result.all()
+        
+        providers_data = []
+        for provider, health, model_provider in rows:
+            # Consider provider healthy if:
+            # 1. No health record yet (new provider)
+            # 2. Health check shows healthy
+            is_healthy = health is None or health.is_healthy
+            
+            if is_healthy:
+                providers_data.append({
+                    "id": provider.id,
+                    "name": provider.name,
+                    "weight": provider.weight * model_provider.weight,  # Combined weight
+                    "priority": provider.priority,
+                    "is_healthy": is_healthy,
+                    "provider_model": model_provider.provider_model  # Actual model name at provider
+                })
+        
+        logger.info(
+            f"Found {len(providers_data)} healthy providers for model {model_name}",
+            extra={
+                "model": model_name,
+                "providers": [p["name"] for p in providers_data]
+            }
+        )
         
         return providers_data
     

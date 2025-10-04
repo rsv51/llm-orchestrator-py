@@ -30,6 +30,7 @@ from app.core.cache import RedisCache
 from app.core.logger import get_logger
 from app.services.router import RequestRouter
 from app.services.balancer import LoadBalancer
+from app.services.token_estimator import TokenEstimator
 from app.models.request_log import RequestLog
 
 logger = get_logger(__name__)
@@ -117,7 +118,8 @@ async def create_chat_completion(
             stream_state = {
                 "last_chunk": None,
                 "provider": None,
-                "start_time": start_time
+                "start_time": start_time,
+                "accumulated_content": ""
             }
             
             async def tracked_stream():
@@ -130,9 +132,20 @@ async def create_chat_completion(
                         api_key=api_key,
                         client_ip=client_ip
                     ):
-                        # Track last chunk for usage extraction
+                        # Track last chunk and accumulate content
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             stream_state["last_chunk"] = chunk
+                            # Extract content for token estimation
+                            try:
+                                data_str = chunk[6:].strip()
+                                data = json.loads(data_str)
+                                if "choices" in data and len(data["choices"]) > 0:
+                                    delta = data["choices"][0].get("delta", {})
+                                    content = delta.get("content", "")
+                                    if content:
+                                        stream_state["accumulated_content"] += content
+                            except:
+                                pass
                         yield chunk
                 finally:
                     # Log after stream completes
@@ -147,23 +160,44 @@ async def create_chat_completion(
                         provider = result.scalar_one_or_none()
                         
                         if provider:
-                            # Extract usage from last chunk
+                            # Extract usage from last chunk or estimate
                             usage_info = None
                             if stream_state["last_chunk"]:
                                 try:
                                     data_str = stream_state["last_chunk"][6:].strip()
                                     data = json.loads(data_str)
                                     if "usage" in data and data["usage"] and data["usage"].get("total_tokens", 0) > 0:
+                                        # Provider returned usage info
                                         usage_info = data["usage"]
                                         logger.info(
-                                            f"Extracted usage: prompt={usage_info.get('prompt_tokens')}, "
+                                            f"Extracted usage from provider: prompt={usage_info.get('prompt_tokens')}, "
                                             f"completion={usage_info.get('completion_tokens')}, "
                                             f"total={usage_info.get('total_tokens')}"
                                         )
                                     else:
-                                        logger.warning(f"Last chunk has no valid usage info: {data_str[:200]}")
+                                        # Provider doesn't support usage tracking, estimate tokens
+                                        logger.warning(f"Provider doesn't return usage info, estimating tokens")
+                                        
+                                        # Estimate tokens
+                                        prompt_tokens = TokenEstimator.estimate_messages_tokens(request.messages)
+                                        completion_tokens = TokenEstimator.estimate_completion_tokens(
+                                            stream_state["accumulated_content"]
+                                        )
+                                        total_tokens = prompt_tokens + completion_tokens
+                                        
+                                        usage_info = {
+                                            "prompt_tokens": prompt_tokens,
+                                            "completion_tokens": completion_tokens,
+                                            "total_tokens": total_tokens
+                                        }
+                                        
+                                        logger.info(
+                                            f"Estimated usage: prompt={prompt_tokens}, "
+                                            f"completion={completion_tokens}, "
+                                            f"total={total_tokens} (content_length={len(stream_state['accumulated_content'])})"
+                                        )
                                 except Exception as e:
-                                    logger.error(f"Failed to extract usage: {str(e)}, chunk: {stream_state['last_chunk'][:200]}")
+                                    logger.error(f"Failed to extract/estimate usage: {str(e)}, chunk: {stream_state['last_chunk'][:200] if stream_state['last_chunk'] else 'None'}")
                             
                             # Create log entry
                             from app.models.request_log import RequestLog
