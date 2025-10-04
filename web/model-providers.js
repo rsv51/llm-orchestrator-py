@@ -283,9 +283,17 @@ async function editAssociation(id) {
     document.getElementById('modal-title').textContent = '编辑模型-提供商关联';
     document.getElementById('submit-text').textContent = '更新';
     
-    // Fill form
-    document.getElementById('model-select').value = assoc.model_id;
-    document.getElementById('provider-select').value = assoc.provider_id;
+    // Fill form - 禁用模型和提供商选择(不可修改)
+    const modelSelect = document.getElementById('model-select');
+    const providerSelect = document.getElementById('provider-select');
+    
+    modelSelect.value = assoc.model_id;
+    modelSelect.disabled = true;
+    
+    providerSelect.value = assoc.provider_id;
+    providerSelect.disabled = true;
+    
+    // 可编辑字段
     document.getElementById('provider-model').value = assoc.provider_model;
     document.getElementById('weight').value = assoc.weight;
     document.getElementById('tool-call').checked = assoc.tool_call;
@@ -366,6 +374,10 @@ async function handleSubmit(e) {
 
 // Close Modal
 function closeModal() {
+    // 重新启用选择框
+    document.getElementById('model-select').disabled = false;
+    document.getElementById('provider-select').disabled = false;
+    
     document.getElementById('association-modal').classList.remove('active');
     editingId = null;
 }

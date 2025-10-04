@@ -40,7 +40,14 @@ const utils = {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            return await response.json();
+            // 对于 204 No Content,不尝试解析 JSON
+            if (response.status === 204) {
+                return null;
+            }
+
+            // 检查响应是否有内容
+            const text = await response.text();
+            return text ? JSON.parse(text) : null;
         } catch (error) {
             console.error('Request failed:', error);
             this.showAlert('请求失败: ' + error.message, 'danger');
@@ -194,6 +201,7 @@ async function loadProviders() {
                     <button class="btn btn-sm btn-success" onclick="getProviderModels(${p.id}, '${p.name}')">
                         📋 获取模型
                     </button>
+                    <button class="btn btn-sm btn-primary" onclick="editProvider(${p.id})">编辑</button>
                     <button class="btn btn-sm btn-primary" onclick="toggleProvider(${p.id}, ${!p.enabled})">
                         ${p.enabled ? '禁用' : '启用'}
                     </button>
@@ -207,10 +215,82 @@ async function loadProviders() {
     }
 }
 
+// 编辑提供商
+async function editProvider(id) {
+    try {
+        const provider = await utils.request(`/api/admin/providers/${id}`, { useAdmin: true });
+        
+        const modalHtml = `
+            <div id="edit-provider-modal" class="modal active">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 class="modal-title">编辑提供商 - ${provider.name}</h3>
+                        <button class="close-btn" onclick="closeModal('edit-provider-modal')">×</button>
+                    </div>
+                    <form id="edit-provider-form">
+                        <input type="hidden" id="edit-provider-id" value="${provider.id}">
+                        <div class="form-group">
+                            <label class="form-label">名称</label>
+                            <input type="text" class="form-control" value="${provider.name}" disabled>
+                            <small style="color: var(--text-secondary);">提供商名称不可修改</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">类型</label>
+                            <input type="text" class="form-control" value="${provider.type}" disabled>
+                            <small style="color: var(--text-secondary);">提供商类型不可修改</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">API 密钥 *</label>
+                            <input type="password" class="form-control" id="edit-api-key" value="${provider.api_key}" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">基础 URL</label>
+                            <input type="text" class="form-control" id="edit-base-url" value="${provider.base_url || ''}" placeholder="留空使用默认值">
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="button" class="btn" onclick="closeModal('edit-provider-modal')">取消</button>
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        
+        const oldModal = document.getElementById('edit-provider-modal');
+        if (oldModal) oldModal.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        document.getElementById('edit-provider-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const data = {
+                api_key: document.getElementById('edit-api-key').value,
+                base_url: document.getElementById('edit-base-url').value || null
+            };
+            
+            try {
+                await utils.request(`/api/admin/providers/${id}`, {
+                    method: 'PATCH',
+                    useAdmin: true,
+                    body: JSON.stringify(data)
+                });
+                
+                utils.showAlert('提供商已更新', 'success');
+                closeModal('edit-provider-modal');
+                await loadProviders();
+            } catch (error) {
+                console.error('Failed to update provider:', error);
+            }
+        });
+    } catch (error) {
+        console.error('Failed to load provider:', error);
+    }
+}
+
 async function toggleProvider(id, enabled) {
     try {
         await utils.request(`/api/admin/providers/${id}`, {
-            method: 'PATCH',  // 修复: 使用 PATCH 而不是 PUT
+            method: 'PATCH',
             useAdmin: true,
             body: JSON.stringify({ enabled })
         });
@@ -392,8 +472,77 @@ function showAddModelModal() {
     document.getElementById('add-model-modal').classList.add('active');
 }
 
+// 编辑模型
 async function editModel(id) {
-    utils.showAlert('编辑功能暂未实现', 'warning');
+    try {
+        const model = await utils.request(`/api/admin/models/${id}`, { useAdmin: true });
+        
+        const modalHtml = `
+            <div id="edit-model-modal" class="modal active">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 class="modal-title">编辑模型</h3>
+                        <button class="close-btn" onclick="closeModal('edit-model-modal')">×</button>
+                    </div>
+                    <form id="edit-model-form">
+                        <input type="hidden" id="edit-model-id" value="${model.id}">
+                        <div class="form-group">
+                            <label class="form-label">模型名称 *</label>
+                            <input type="text" class="form-control" id="edit-model-name" value="${model.name}" required>
+                            <small style="color: var(--text-secondary);">用户请求时使用的模型名称</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">备注</label>
+                            <textarea class="form-control" id="edit-model-remark" rows="2">${model.remark || ''}</textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">最大重试次数</label>
+                            <input type="number" class="form-control" value="${model.max_retry}" disabled>
+                            <small style="color: var(--text-secondary);">暂不支持修改</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">超时时间 (秒)</label>
+                            <input type="number" class="form-control" value="${model.timeout}" disabled>
+                            <small style="color: var(--text-secondary);">暂不支持修改</small>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="button" class="btn" onclick="closeModal('edit-model-modal')">取消</button>
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        
+        const oldModal = document.getElementById('edit-model-modal');
+        if (oldModal) oldModal.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        document.getElementById('edit-model-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const data = {
+                name: document.getElementById('edit-model-name').value,
+                remark: document.getElementById('edit-model-remark').value || null
+            };
+            
+            try {
+                await utils.request(`/api/admin/models/${id}`, {
+                    method: 'PATCH',
+                    useAdmin: true,
+                    body: JSON.stringify(data)
+                });
+                
+                utils.showAlert('模型已更新', 'success');
+                closeModal('edit-model-modal');
+                await loadModels();
+            } catch (error) {
+                console.error('Failed to update model:', error);
+            }
+        });
+    } catch (error) {
+        console.error('Failed to load model:', error);
+    }
 }
 
 async function deleteModel(id) {

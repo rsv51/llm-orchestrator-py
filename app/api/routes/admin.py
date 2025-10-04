@@ -294,8 +294,14 @@ async def get_provider_models(
             )
         
         # Get provider instance
-        from app.services.router import get_provider_instance
-        provider_instance = get_provider_instance(provider)
+        from app.providers.factory import ProviderFactory
+        
+        provider_factory = ProviderFactory()
+        provider_instance = provider_factory.create_provider(
+            provider_type=provider.type,
+            api_key=provider.api_key,
+            base_url=provider.base_url
+        )
         
         # Get models
         models = await provider_instance.get_models()
@@ -344,8 +350,14 @@ async def import_provider_models(
             )
         
         # Get provider instance
-        from app.services.router import get_provider_instance
-        provider_instance = get_provider_instance(provider)
+        from app.providers.factory import ProviderFactory
+        
+        provider_factory = ProviderFactory()
+        provider_instance = provider_factory.create_provider(
+            provider_type=provider.type,
+            api_key=provider.api_key,
+            base_url=provider.base_url
+        )
         
         # Get all models
         all_models = await provider_instance.get_models()
