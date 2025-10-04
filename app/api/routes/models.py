@@ -61,16 +61,21 @@ async def list_models(
         result = await db.execute(query)
         rows = result.all()
         
-        # Build models list
-        models: List[Model] = []
+        # Build models list - group by model name for multi-provider support
+        # Use model name as ID to enable automatic failover and load balancing
+        models_dict = {}
         for model_config, provider in rows:
-            model = Model(
-                id=f"{provider.name}:{model_config.name}",
-                object="model",
-                created=int(model_config.created_at.timestamp()),
-                owned_by=provider.name
-            )
-            models.append(model)
+            model_name = model_config.name
+            if model_name not in models_dict:
+                # First provider for this model
+                models_dict[model_name] = Model(
+                    id=model_name,  # Use model name as ID for client compatibility
+                    object="model",
+                    created=int(model_config.created_at.timestamp()),
+                    owned_by="orchestrator"  # Indicate this is orchestrated across providers
+                )
+        
+        models = list(models_dict.values())
         
         # Cache for 5 minutes
         await cache.set(cache_key, [m.dict() for m in models], ttl=300)
@@ -114,44 +119,27 @@ async def retrieve_model(
     logger.info(f"Model retrieve requested: {model_id}")
     
     try:
-        # Parse model ID
-        if ":" in model_id:
-            provider_name, model_name = model_id.split(":", 1)
-        else:
-            provider_name = None
-            model_name = model_id
+        # Model ID is now just the model name (no provider prefix)
+        model_name = model_id
         
         # Try cache first
-        cache_key = f"models:detail:{model_id}"
+        cache_key = f"models:detail:{model_name}"
         cached_model = await cache.get(cache_key)
         
         if cached_model:
-            logger.debug(f"Returning model {model_id} from cache")
+            logger.debug(f"Returning model {model_name} from cache")
             return Model(**cached_model)
         
-        # Query database
-        if provider_name:
-            # Specific provider requested
-            query = (
-                select(ModelConfig, Provider)
-                .join(Provider, ModelConfig.id == Provider.id)
-                .where(
-                    Provider.name == provider_name,
-                    ModelConfig.name == model_name,
-                    Provider.enabled == True
-                )
+        # Query database - find any enabled provider with this model
+        query = (
+            select(ModelConfig, Provider)
+            .join(Provider, ModelConfig.id == Provider.id)
+            .where(
+                ModelConfig.name == model_name,
+                Provider.enabled == True
             )
-        else:
-            # Any provider with this model
-            query = (
-                select(ModelConfig, Provider)
-                .join(Provider, ModelConfig.id == Provider.id)
-                .where(
-                    ModelConfig.name == model_name,
-                    Provider.enabled == True
-                )
-                .limit(1)
-            )
+            .limit(1)
+        )
         
         result = await db.execute(query)
         row = result.first()
@@ -159,16 +147,16 @@ async def retrieve_model(
         if not row:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Model {model_id} not found"
+                detail=f"Model {model_name} not found"
             )
         
         model_config, provider = row
         
         model = Model(
-            id=f"{provider.name}:{model_config.name}",
+            id=model_name,  # Use model name as ID
             object="model",
             created=int(model_config.created_at.timestamp()),
-            owned_by=provider.name
+            owned_by="orchestrator"  # Indicate orchestration
         )
         
         # Cache for 5 minutes
