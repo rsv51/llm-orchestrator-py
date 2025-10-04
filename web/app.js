@@ -350,64 +350,8 @@ function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
 }
 
-// 处理添加提供商表单
-document.getElementById('add-provider-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const formData = new FormData(e.target);
-    const data = {
-        name: formData.get('name'),
-        type: formData.get('type'),
-        api_key: formData.get('api_key'),
-        base_url: formData.get('base_url') || null,
-        priority: parseInt(formData.get('priority')) || 100,
-        enabled: formData.get('enabled') === 'on'
-    };
-    
-    try {
-        await utils.request('/api/admin/providers', {
-            method: 'POST',
-            useAdmin: true,
-            body: JSON.stringify(data)
-        });
-        
-        utils.showAlert('提供商添加成功', 'success');
-        closeModal('add-provider-modal');
-        e.target.reset();
-        await loadProviders();
-    } catch (error) {
-        console.error('Failed to add provider:', error);
-    }
-});
-
-// 处理添加模型表单
-document.getElementById('add-model-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const formData = new FormData(e.target);
-    const data = {
-        name: formData.get('name'),
-        remark: formData.get('remark') || null,
-        max_retry: parseInt(formData.get('max_retry')) || 3,
-        timeout: parseInt(formData.get('timeout')) || 30,
-        enabled: formData.get('enabled') === 'on'
-    };
-    
-    try {
-        await utils.request('/api/admin/models', {
-            method: 'POST',
-            useAdmin: true,
-            body: JSON.stringify(data)
-        });
-        
-        utils.showAlert('模型配置添加成功', 'success');
-        closeModal('add-model-modal');
-        e.target.reset();
-        await loadModels();
-    } catch (error) {
-        console.error('Failed to add model:', error);
-    }
-});
+// 处理添加提供商表单 - 移到 DOMContentLoaded 内部
+// 处理添加模型表单 - 移到 DOMContentLoaded 内部
 
 // 模型管理
 async function loadModels() {
@@ -611,7 +555,18 @@ async function refreshAll() {
     utils.showAlert('数据已刷新', 'success');
 }
 
-// 初始化
+// 添加登出功能
+function logout() {
+    if (confirm('确定要退出登录吗?')) {
+        localStorage.removeItem('adminKey');
+        sessionStorage.removeItem('adminKey');
+        localStorage.removeItem('apiKey');
+        sessionStorage.removeItem('apiKey');
+        window.location.href = '/admin-ui/login.html';
+    }
+}
+
+// 初始化 - 合并所有 DOMContentLoaded 事件
 document.addEventListener('DOMContentLoaded', async () => {
     // 检查登录状态
     if (!checkAuth()) {
@@ -651,21 +606,73 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.location.href = '/admin-ui/login.html';
         }
     }
-});
-
-// 添加登出功能
-function logout() {
-    if (confirm('确定要退出登录吗?')) {
-        localStorage.removeItem('adminKey');
-        sessionStorage.removeItem('adminKey');
-        localStorage.removeItem('apiKey');
-        sessionStorage.removeItem('apiKey');
-        window.location.href = '/admin-ui/login.html';
+    
+    // 绑定添加提供商表单
+    const providerForm = document.getElementById('add-provider-form');
+    if (providerForm) {
+        providerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('name'),
+                type: formData.get('type'),
+                api_key: formData.get('api_key'),
+                base_url: formData.get('base_url') || null,
+                priority: parseInt(formData.get('priority')) || 100,
+                enabled: formData.get('enabled') === 'on'
+            };
+            
+            try {
+                await utils.request('/api/admin/providers', {
+                    method: 'POST',
+                    useAdmin: true,
+                    body: JSON.stringify(data)
+                });
+                
+                utils.showAlert('提供商添加成功', 'success');
+                closeModal('add-provider-modal');
+                e.target.reset();
+                await loadProviders();
+            } catch (error) {
+                console.error('Failed to add provider:', error);
+            }
+        });
     }
-}
-
-// 处理统一导入表单
-document.addEventListener('DOMContentLoaded', () => {
+    
+    // 绑定添加模型表单
+    const modelForm = document.getElementById('add-model-form');
+    if (modelForm) {
+        modelForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('name'),
+                remark: formData.get('remark') || null,
+                max_retry: parseInt(formData.get('max_retry')) || 3,
+                timeout: parseInt(formData.get('timeout')) || 30,
+                enabled: formData.get('enabled') === 'on'
+            };
+            
+            try {
+                await utils.request('/api/admin/models', {
+                    method: 'POST',
+                    useAdmin: true,
+                    body: JSON.stringify(data)
+                });
+                
+                utils.showAlert('模型配置添加成功', 'success');
+                closeModal('add-model-modal');
+                e.target.reset();
+                await loadModels();
+            } catch (error) {
+                console.error('Failed to add model:', error);
+            }
+        });
+    }
+    
+    // 绑定统一导入表单
     const unifiedImportForm = document.getElementById('unified-import-form');
     if (unifiedImportForm) {
         unifiedImportForm.addEventListener('submit', async (e) => {
@@ -801,6 +808,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    
+    // 绑定模态框点击外部关闭
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.remove('active');
+            }
+        });
+    });
 });
 
 // 点击模态框外部关闭
