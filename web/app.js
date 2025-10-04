@@ -631,7 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // 检查 API 连接
     try {
-        await utils.request('/api/health');
+        await utils.request('/api/admin/health', { useAdmin: true });
         document.getElementById('api-status').textContent = 'API 正常';
         document.getElementById('api-status').className = 'badge badge-success';
     } catch (error) {

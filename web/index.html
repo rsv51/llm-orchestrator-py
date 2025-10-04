@@ -753,6 +753,32 @@
         </div>
     </div>
 
+    <!-- Unified Import Modal -->
+    <div id="unified-import-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">导入配置</h3>
+                <button class="close-btn" onclick="closeModal('unified-import-modal')">×</button>
+            </div>
+            <form id="unified-import-form">
+                <div class="form-group">
+                    <label class="form-label">选择 Excel 文件</label>
+                    <input type="file" class="form-control" id="unified-import-file" accept=".xlsx,.xls" required>
+                </div>
+                <div style="margin-bottom: 20px; padding: 12px; background: var(--bg-color); border-radius: 6px;">
+                    <p style="margin: 0; color: var(--text-secondary); font-size: 14px;">
+                        📌 请选择包含 Providers、Models、Associations 三个工作表的 Excel 文件
+                    </p>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn" onclick="closeModal('unified-import-modal')">取消</button>
+                    <button type="submit" class="btn btn-primary">开始导入</button>
+                </div>
+            </form>
+            <div id="unified-import-result" style="margin-top: 20px; display: none;"></div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>
