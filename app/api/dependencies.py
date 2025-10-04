@@ -148,8 +148,9 @@ async def verify_admin_key(
         )
     
     # Validate admin key
-    if not settings.admin_key or admin_key != settings.admin_key:
-        logger.warning(f"Invalid admin key attempted: {admin_key[:8]}...")
+    if admin_key != settings.admin_key:
+        logger.warning(f"Invalid admin key attempted: {admin_key[:min(8, len(admin_key))]}...")
+        logger.debug(f"Expected admin key starts with: {settings.admin_key[:min(8, len(settings.admin_key))]}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid admin key",

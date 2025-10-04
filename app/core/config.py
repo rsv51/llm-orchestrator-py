@@ -60,8 +60,8 @@ class Settings(BaseSettings):
         default_factory=list,
         description="List of valid API keys for authentication"
     )
-    admin_key: Optional[str] = Field(
-        default=None,
+    admin_key: str = Field(
+        default="admin-secret-key-change-this",
         description="Admin API key for management endpoints"
     )
     
