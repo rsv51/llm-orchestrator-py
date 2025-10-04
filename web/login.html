@@ -197,7 +197,7 @@
 
         async function verifyKeyAndRedirect(adminKey) {
             try {
-                const response = await fetch('/admin/providers', {
+                const response = await fetch('/admin/verify', {
                     headers: {
                         'Authorization': `Bearer ${adminKey}`
                     }
@@ -208,6 +208,7 @@
                 } else {
                     // 密钥无效,清除存储
                     localStorage.removeItem('adminKey');
+                    sessionStorage.removeItem('adminKey');
                 }
             } catch (error) {
                 console.error('Verification failed:', error);
@@ -232,12 +233,14 @@
             submitBtn.disabled = true;
 
             try {
-                // 验证密钥
-                const response = await fetch('/admin/providers', {
+                // 验证密钥 - 使用专门的验证端点
+                const response = await fetch('/admin/verify', {
                     headers: {
                         'Authorization': `Bearer ${adminKey}`
                     }
                 });
+
+                console.log('验证响应状态:', response.status);
 
                 if (response.ok) {
                     // 登录成功
@@ -253,16 +256,20 @@
                         window.location.href = '/admin-ui/index.html';
                     }, 500);
                 } else if (response.status === 401 || response.status === 403) {
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error('验证失败:', errorData);
                     showAlert('管理员密钥错误,请重试', 'danger');
                     submitBtn.textContent = originalText;
                     submitBtn.disabled = false;
                 } else {
+                    const errorText = await response.text().catch(() => response.statusText);
+                    console.error('登录失败:', errorText);
                     showAlert('登录失败: ' + response.statusText, 'danger');
                     submitBtn.textContent = originalText;
                     submitBtn.disabled = false;
                 }
             } catch (error) {
-                console.error('Login failed:', error);
+                console.error('登录异常:', error);
                 showAlert('网络错误,请检查服务是否正常运行', 'danger');
                 submitBtn.textContent = originalText;
                 submitBtn.disabled = false;

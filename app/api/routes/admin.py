@@ -40,6 +40,19 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 # ============================================================================
+# Authentication Test Endpoint
+# ============================================================================
+
+@router.get(
+    "/verify",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def verify_admin():
+    """Verify admin key - simple endpoint for login validation."""
+    return {"status": "ok", "message": "Admin key is valid"}
+
+
+# ============================================================================
 # Provider Management
 # ============================================================================
 
