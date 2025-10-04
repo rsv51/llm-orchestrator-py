@@ -183,19 +183,17 @@ class ProviderBase(BaseModel):
     name: str
     type: str
     base_url: Optional[str] = None
-    api_key: Optional[str] = None
     enabled: bool = True
     priority: int = Field(default=100, ge=0, le=1000)
     weight: int = Field(default=100, ge=0, le=1000)
     max_retries: int = Field(default=3, ge=0, le=10)
     timeout: int = Field(default=60, ge=1, le=300)
     rate_limit: Optional[int] = Field(default=None, ge=1)
-    metadata: Optional[Dict[str, Any]] = None
 
 
 class ProviderCreate(ProviderBase):
     """Provider creation schema."""
-    pass
+    api_key: str = Field(min_length=1, description="API key for the provider")
 
 
 class ProviderUpdate(BaseModel):
@@ -210,14 +208,23 @@ class ProviderUpdate(BaseModel):
     max_retries: Optional[int] = Field(default=None, ge=0, le=10)
     timeout: Optional[int] = Field(default=None, ge=1, le=300)
     rate_limit: Optional[int] = Field(default=None, ge=1)
-    metadata: Optional[Dict[str, Any]] = None
 
 
-class ProviderResponse(ProviderBase):
-    """Provider response schema."""
+class ProviderResponse(BaseModel):
+    """Provider response schema - matches database model exactly."""
     model_config = {"from_attributes": True}
     
     id: int
+    name: str
+    type: str
+    api_key: str
+    base_url: Optional[str] = None
+    enabled: bool
+    priority: int
+    weight: int
+    max_retries: int
+    timeout: int
+    rate_limit: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

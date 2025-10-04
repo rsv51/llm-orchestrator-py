@@ -151,9 +151,9 @@ class ExcelService:
         for m in models:
             ws.append([
                 m.name,
-                m.display_name or '',
-                3,  # 默认最大重试次数
-                60  # 默认超时时间(秒)
+                m.remark or '',
+                m.max_retry,
+                m.timeout
             ])
         
         # 如果需要示例数据
@@ -409,12 +409,10 @@ class ExcelService:
                 # 创建模型
                 model = ModelConfig(
                     name=name,
-                    display_name=str(row[1]).strip() if row[1] else name,
-                    context_length=4096,  # 默认值
-                    max_tokens=4096,  # 默认值
-                    supports_streaming=True,
-                    supports_functions=True,
-                    supports_vision=False
+                    remark=str(row[1]).strip() if row[1] else None,
+                    max_retry=int(row[2]) if row[2] and str(row[2]).isdigit() else 3,
+                    timeout=int(row[3]) if row[3] and str(row[3]).isdigit() else 30,
+                    enabled=True
                 )
                 
                 self.db.add(model)
