@@ -9,17 +9,9 @@ if [ "${REDIS_ENABLED:-true}" = "true" ]; then
     sleep 5
 fi
 
-# Run database migrations (will auto-create tables)
+# Run database migrations (auto-creates all tables)
 echo "📦 Running database migrations..."
-if alembic upgrade head 2>&1; then
-    echo "✅ Database migrations completed"
-else
-    echo "⚠️ Migration failed, attempting to continue..."
-fi
-
-# Initialize database with default data if needed
-echo "🔧 Initializing database..."
-python scripts/init_db.py 2>&1 || echo "⚠️ Init failed, continuing..."
+alembic upgrade head
 
 # Start the application
 echo "✅ Starting application server..."

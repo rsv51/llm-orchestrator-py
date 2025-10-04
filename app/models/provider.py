@@ -20,8 +20,7 @@ class Provider(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False, index=True)
     type = Column(String(50), nullable=False, index=True)  # openai, anthropic, gemini
-    config = Column(Text, nullable=False)  # JSON string with api_key, base_url, etc
-    console = Column(String(255))  # Console URL for provider
+    config = Column(Text, nullable=False)  # JSON string: {"api_key": "...", "base_url": "...", "model_mapping": {...}}
     enabled = Column(Boolean, default=True)
     priority = Column(Integer, default=100, nullable=False)  # Higher priority = tried first
     weight = Column(Integer, default=100, nullable=False)  # Weight for load balancing

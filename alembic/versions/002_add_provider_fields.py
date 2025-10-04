@@ -17,7 +17,7 @@ depends_on = None
 
 def upgrade() -> None:
     """Add missing fields to providers table."""
-    # Add priority column
+    # Add priority column with permanent server_default for SQLite compatibility
     op.add_column('providers', sa.Column('priority', sa.Integer(), nullable=False, server_default='100'))
     
     # Add weight column
@@ -32,11 +32,8 @@ def upgrade() -> None:
     # Add rate_limit column (nullable)
     op.add_column('providers', sa.Column('rate_limit', sa.Integer(), nullable=True))
     
-    # Remove server defaults after creation (they're only for existing rows)
-    op.alter_column('providers', 'priority', server_default=None)
-    op.alter_column('providers', 'weight', server_default=None)
-    op.alter_column('providers', 'max_retries', server_default=None)
-    op.alter_column('providers', 'timeout', server_default=None)
+    # Note: SQLite doesn't support ALTER COLUMN to remove server_default
+    # The server_default will remain but won't affect application behavior
 
 
 def downgrade() -> None:

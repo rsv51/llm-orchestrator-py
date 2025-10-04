@@ -3,7 +3,7 @@ Database models for providers, models, logs, and health status.
 """
 from app.models.provider import Provider, ModelConfig, ModelProvider
 from app.models.request_log import RequestLog
-from app.models.health import ProviderHealth, ProviderStats, HealthCheckConfig
+from app.models.health import ProviderHealth, ProviderStats
 
 __all__ = [
     "Provider",
@@ -12,5 +12,4 @@ __all__ = [
     "RequestLog",
     "ProviderHealth",
     "ProviderStats",
-    "HealthCheckConfig",
 ]

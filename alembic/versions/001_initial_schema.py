@@ -26,7 +26,6 @@ def upgrade() -> None:
         sa.Column('name', sa.String(100), nullable=False),
         sa.Column('type', sa.String(50), nullable=False),
         sa.Column('config', sa.Text(), nullable=False),
-        sa.Column('console', sa.String(255), nullable=True),
         sa.Column('enabled', sa.Boolean(), nullable=True, server_default='1'),
         sa.Column('created_at', sa.DateTime(), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')),
         sa.Column('updated_at', sa.DateTime(), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')),
@@ -142,18 +141,6 @@ def upgrade() -> None:
     op.create_index('ix_provider_stats_date', 'provider_stats', ['date'])
     op.create_index('ix_provider_stats_last_used_at', 'provider_stats', ['last_used_at'])
     op.create_index('idx_provider_date', 'provider_stats', ['provider_id', 'date'], unique=True)
-    
-    # Create health_check_config table
-    op.create_table(
-        'health_check_config',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('enabled', sa.Boolean(), nullable=True, server_default='1'),
-        sa.Column('interval_minutes', sa.Integer(), nullable=True, server_default='5'),
-        sa.Column('max_error_count', sa.Integer(), nullable=True, server_default='5'),
-        sa.Column('retry_after_hours', sa.Integer(), nullable=True, server_default='1'),
-        sa.Column('updated_at', sa.DateTime(), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.PrimaryKeyConstraint('id')
-    )
 
 
 def downgrade() -> None:

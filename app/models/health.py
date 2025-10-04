@@ -63,15 +63,3 @@ class ProviderStats(Base):
         Index('idx_provider_date', 'provider_id', 'date', unique=True),
     )
 
-
-class HealthCheckConfig(Base):
-    """Health check configuration (singleton table)."""
-    
-    __tablename__ = "health_check_config"
-    
-    id = Column(Integer, primary_key=True)
-    enabled = Column(Boolean, default=True)
-    interval_minutes = Column(Integer, default=5)
-    max_error_count = Column(Integer, default=5)
-    retry_after_hours = Column(Integer, default=1)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
