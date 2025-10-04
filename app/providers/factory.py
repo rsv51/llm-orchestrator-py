@@ -54,13 +54,16 @@ class ProviderFactory:
                 f"Available types: {', '.join(cls._providers.keys())}"
             )
         
-        # Create provider instance with direct parameters
-        provider_class = cls._providers[provider_type]
-        provider = provider_class(
+        # Create ProviderConfig first
+        config = ProviderConfig(
             api_key=api_key,
             base_url=base_url,
             timeout=timeout
         )
+        
+        # Create provider instance with config
+        provider_class = cls._providers[provider_type]
+        provider = provider_class(config=config)
         
         logger.info(
             "Created provider instance",
