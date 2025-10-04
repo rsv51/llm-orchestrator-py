@@ -5,9 +5,10 @@
 
 ## 问题概述
 Excel 批量管理功能无法使用，主要有以下几个问题：
-1. API 路径 404 错误 - 导入配置和导出模板无响应
+1. API 路径 404 错误 - 导入配置、导出模板、登录验证无响应
 2. 新建模型报错：`'base_url' is an invalid keyword argument for Provider`
 3. Excel Service 中的字段映射不一致
+4. Pydantic 警告：`model_id` 和 `model_name` 与保护的 `model_` 命名空间冲突
 
 ## 修复详情
 
@@ -28,6 +29,7 @@ Excel 批量管理功能无法使用，主要有以下几个问题：
 - 修改前端文件 [`web/model-providers.js`](llm-orchestrator-py/web/model-providers.js)：所有 `/admin/...` 路径改为 `/api/admin/...`
 
 **影响的路由**:
+- ✅ `/api/admin/verify` - 登录验证
 - ✅ `/api/admin/export/config` - 导出配置
 - ✅ `/api/admin/export/template` - 下载模板
 - ✅ `/api/admin/import/config/upload` - 导入配置
@@ -36,6 +38,9 @@ Excel 批量管理功能无法使用，主要有以下几个问题：
 - ✅ `/api/admin/stats` - 统计数据
 - ✅ `/api/admin/health` - 健康检查
 - ✅ `/api/admin/logs` - 请求日志
+- ✅ `/api/health` - 系统健康检查
+- ✅ `/api/v1/chat/completions` - 聊天完成
+- ✅ `/api/v1/models` - 模型列表
 
 ### 2. Provider 模型字段问题修复
 
@@ -79,6 +84,18 @@ alembic downgrade -1
   - 第 201 行：导出关联时的字段名
   - 第 509 行：导入时查询重复记录
   - 第 522 行：创建新关联记录
+
+### 4. Pydantic 警告修复
+
+**问题**: Pydantic v2 警告 `model_id` 和 `model_name` 字段与保护的 `model_` 命名空间冲突。
+
+**修复**:
+- 在 [`app/api/schemas.py`](llm-orchestrator-py/app/api/schemas.py) 中添加 `model_config = {"protected_namespaces": ()}` 配置
+- 修改影响的类：
+  - `ModelProviderBase` (第 339 行)
+  - `ModelProviderWithDetails` (第 377 行)
+
+这样允许使用 `model_` 开头的字段名，消除 Pydantic 警告。
 
 ### 4. 修复后的 Excel 工作表结构
 
@@ -157,11 +174,13 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 1. ✅ [`app/models/provider.py`](llm-orchestrator-py/app/models/provider.py) - Provider 模型结构调整
 2. ✅ [`app/services/excel_service.py`](llm-orchestrator-py/app/services/excel_service.py) - 字段映射修复
 3. ✅ [`app/main.py`](llm-orchestrator-py/app/main.py) - 添加 /api 路由前缀
-4. ✅ [`alembic/versions/003_provider_config_to_fields.py`](llm-orchestrator-py/alembic/versions/003_provider_config_to_fields.py) - 数据库迁移脚本
+4. ✅ [`app/api/schemas.py`](llm-orchestrator-py/app/api/schemas.py) - 修复 Pydantic model_ 命名空间警告
+5. ✅ [`alembic/versions/003_provider_config_to_fields.py`](llm-orchestrator-py/alembic/versions/003_provider_config_to_fields.py) - 数据库迁移脚本
 
 ### 前端文件
 1. ✅ [`web/app.js`](llm-orchestrator-py/web/app.js) - API 路径修复
 2. ✅ [`web/model-providers.js`](llm-orchestrator-py/web/model-providers.js) - API 路径修复
+3. ✅ [`web/login.html`](llm-orchestrator-py/web/login.html) - 登录验证路径修复
 
 ## 兼容性说明
 

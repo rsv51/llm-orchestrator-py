@@ -337,6 +337,8 @@ class ModelConfigResponse(ModelConfigBase):
 
 class ModelProviderBase(BaseModel):
     """Model-Provider association base schema."""
+    model_config = {"protected_namespaces": ()}
+    
     model_id: int = Field(gt=0)
     provider_id: int = Field(gt=0)
     provider_model: str = Field(min_length=1)
@@ -374,6 +376,8 @@ class ModelProviderResponse(ModelProviderBase):
 
 class ModelProviderWithDetails(ModelProviderResponse):
     """Model-Provider association with provider details."""
+    model_config = {"protected_namespaces": ()}
+    
     provider_name: Optional[str] = None
     provider_type: Optional[str] = None
     model_name: Optional[str] = None
