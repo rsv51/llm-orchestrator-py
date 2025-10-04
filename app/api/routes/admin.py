@@ -877,6 +877,7 @@ async def delete_model_config(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete model: {str(e)}"
+        )
 
 
 # ============================================================================
@@ -1223,5 +1224,4 @@ async def get_model_provider_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get status: {str(e)}"
-        )
         )
