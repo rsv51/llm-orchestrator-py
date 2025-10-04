@@ -90,11 +90,16 @@ def create_app() -> FastAPI:
     # Setup middleware
     setup_middleware(app)
     
-    # Include routers with /api prefix
+    # Include routers with /api prefix for admin UI
     app.include_router(chat.router, prefix="/api")
-    app.include_router(models.router, prefix="/api")
     app.include_router(admin.router, prefix="/api")
     app.include_router(excel.router, prefix="/api")
+    
+    # Include models router twice:
+    # 1. With /api prefix for admin UI compatibility
+    app.include_router(models.router, prefix="/api", tags=["admin-models"])
+    # 2. Without prefix for OpenAI-compatible /v1/models endpoint
+    app.include_router(models.router, tags=["openai-models"])
     
     # Mount static files for web UI
     web_dir = Path(__file__).parent.parent / "web"
