@@ -49,25 +49,66 @@ class ProviderHealth(Base):
 
 ### 2. 数据库迁移
 
-运行迁移脚本添加新字段:
+#### Docker 部署 (推荐 - 全自动)
+
+**如果您使用 Docker 部署,无需任何手动操作!**
 
 ```bash
-# 方式 1: 使用 SQLite 命令行
-sqlite3 llm_orchestrator.db < migrations/add_health_fields.sql
+# 重新部署容器,自动执行 Alembic 迁移
+docker-compose down
+docker-compose build
+docker-compose up -d
 
-# 方式 2: 使用 Python
-python -c "
-from app.core.database import engine, Base
-from app.models.health import ProviderHealth
-import asyncio
-
-async def migrate():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-asyncio.run(migrate())
-"
+# 容器启动时会自动:
+# 1. 检测待应用的迁移
+# 2. 执行 Alembic 迁移 004
+# 3. 添加所有缺失的字段
+# 4. 启动应用
 ```
+
+查看详细说明: [Docker 部署指南](DOCKER_DEPLOYMENT_GUIDE.md)
+
+#### Alembic 迁移 (标准方式)
+
+**如果您使用 Alembic**:
+
+```bash
+# 执行所有待应用的迁移
+alembic upgrade head
+
+# 验证当前版本
+alembic current
+# 应显示: 004 (head)
+
+# 查看迁移历史
+alembic history
+```
+
+迁移文件: [`alembic/versions/004_add_provider_health_fields.py`](alembic/versions/004_add_provider_health_fields.py)
+
+#### 手动迁移 (备选方案)
+
+**如果不使用 Docker 或 Alembic**:
+
+##### 方式 1: Windows - 双击运行批处理文件
+```bash
+# 项目根目录下执行
+migrations\run_migration.bat
+```
+
+##### 方式 2: Python 脚本
+```bash
+python migrations/run_migration.py llm_orchestrator.db
+```
+
+##### 方式 3: SQLite 命令行
+```bash
+sqlite3 llm_orchestrator.db < migrations/add_health_fields.sql
+```
+
+**注意**: 手动迁移脚本包含完整的错误处理,可安全重复执行。
+
+查看详细说明: [手动迁移指南](migrations/README.md)
 
 ### 3. 健康检查 API 优化
 

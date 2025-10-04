@@ -45,42 +45,38 @@ class OpenAIProvider(BaseProvider):
         # Resolve model name using aliases
         resolved_model = self.config.resolve_model(request.model)
         
-        # Prepare request payload - convert Pydantic models to dict
+        # Prepare request payload with only valid fields
         payload = {
             "model": resolved_model,
-            "messages": [msg.model_dump() for msg in request.messages],
+            "messages": [msg.model_dump(exclude_none=True) for msg in request.messages],
             "stream": False
         }
         
-        # Add optional parameters
-        if request.temperature is not None:
-            payload["temperature"] = request.temperature
-        if request.top_p is not None:
-            payload["top_p"] = request.top_p
-        if request.max_tokens is not None:
-            payload["max_tokens"] = request.max_tokens
-        if request.presence_penalty is not None:
-            payload["presence_penalty"] = request.presence_penalty
-        if request.frequency_penalty is not None:
-            payload["frequency_penalty"] = request.frequency_penalty
-        if request.stop is not None:
-            payload["stop"] = request.stop
-        if request.user is not None:
-            payload["user"] = request.user
+        # Helper function to add non-None and non-empty values
+        def add_if_valid(key: str, value):
+            """Add field to payload only if it's not None and not an empty dict/list."""
+            if value is not None:
+                # Skip empty dicts and lists
+                if isinstance(value, (dict, list)) and not value:
+                    return
+                payload[key] = value
         
-        # ✅ Support for tool calling
-        if request.tools is not None:
-            payload["tools"] = [tool.model_dump() for tool in request.tools]
-        if request.tool_choice is not None:
-            payload["tool_choice"] = request.tool_choice
+        # Add optional parameters with validation
+        add_if_valid("temperature", request.temperature)
+        add_if_valid("top_p", request.top_p)
+        add_if_valid("max_tokens", request.max_tokens)
+        add_if_valid("presence_penalty", request.presence_penalty)
+        add_if_valid("frequency_penalty", request.frequency_penalty)
+        add_if_valid("stop", request.stop)
+        add_if_valid("user", request.user)
         
-        # ✅ Support for structured output
-        if request.response_format is not None:
-            payload["response_format"] = request.response_format
+        # Handle tools (dump to dict and exclude None)
+        if request.tools:
+            payload["tools"] = [tool.model_dump(exclude_none=True) for tool in request.tools]
         
-        # Support for seed
-        if request.seed is not None:
-            payload["seed"] = request.seed
+        add_if_valid("tool_choice", request.tool_choice)
+        add_if_valid("response_format", request.response_format)
+        add_if_valid("seed", request.seed)
         
         # Apply parameter overrides
         payload = self.apply_parameter_overrides(payload)
@@ -112,36 +108,38 @@ class OpenAIProvider(BaseProvider):
         # Resolve model name
         resolved_model = self.config.resolve_model(request.model)
         
-        # Prepare payload
+        # Prepare payload with only valid fields
         payload = {
             "model": resolved_model,
-            "messages": [msg.model_dump() for msg in request.messages],
+            "messages": [msg.model_dump(exclude_none=True) for msg in request.messages],
             "stream": True
         }
         
-        # Add all optional parameters (same as non-streaming)
-        if request.temperature is not None:
-            payload["temperature"] = request.temperature
-        if request.top_p is not None:
-            payload["top_p"] = request.top_p
-        if request.max_tokens is not None:
-            payload["max_tokens"] = request.max_tokens
-        if request.presence_penalty is not None:
-            payload["presence_penalty"] = request.presence_penalty
-        if request.frequency_penalty is not None:
-            payload["frequency_penalty"] = request.frequency_penalty
-        if request.stop is not None:
-            payload["stop"] = request.stop
-        if request.user is not None:
-            payload["user"] = request.user
-        if request.tools is not None:
-            payload["tools"] = [tool.model_dump() for tool in request.tools]
-        if request.tool_choice is not None:
-            payload["tool_choice"] = request.tool_choice
-        if request.response_format is not None:
-            payload["response_format"] = request.response_format
-        if request.seed is not None:
-            payload["seed"] = request.seed
+        # Helper function to add non-None and non-empty values
+        def add_if_valid(key: str, value):
+            """Add field to payload only if it's not None and not an empty dict/list."""
+            if value is not None:
+                # Skip empty dicts and lists
+                if isinstance(value, (dict, list)) and not value:
+                    return
+                payload[key] = value
+        
+        # Add all optional parameters with validation
+        add_if_valid("temperature", request.temperature)
+        add_if_valid("top_p", request.top_p)
+        add_if_valid("max_tokens", request.max_tokens)
+        add_if_valid("presence_penalty", request.presence_penalty)
+        add_if_valid("frequency_penalty", request.frequency_penalty)
+        add_if_valid("stop", request.stop)
+        add_if_valid("user", request.user)
+        
+        # Handle tools (dump to dict and exclude None)
+        if request.tools:
+            payload["tools"] = [tool.model_dump(exclude_none=True) for tool in request.tools]
+        
+        add_if_valid("tool_choice", request.tool_choice)
+        add_if_valid("response_format", request.response_format)
+        add_if_valid("seed", request.seed)
         
         payload = self.apply_parameter_overrides(payload)
         
