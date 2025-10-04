@@ -120,12 +120,21 @@ app = create_app()
 
 @app.get("/", tags=["root"])
 async def root():
-    """Root endpoint - API information."""
+    """Root endpoint - redirects to Web UI."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/admin-ui/login.html")
+
+
+@app.get("/api", tags=["root"])
+@app.get("/api/", tags=["root"])
+async def api_info():
+    """API information endpoint."""
     return {
         "name": settings.app_name,
         "version": "1.0.0",
         "status": "running",
         "docs": "/docs" if settings.debug else "disabled",
+        "web_ui": "/admin-ui/",
     }
 
 
