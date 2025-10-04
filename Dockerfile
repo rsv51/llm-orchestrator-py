@@ -32,6 +32,9 @@ COPY --from=builder /root/.local /home/appuser/.local
 # Copy application code
 COPY --chown=appuser:appuser . .
 
+# Make entrypoint script executable
+RUN chmod +x /app/scripts/docker-entrypoint.sh
+
 # Create necessary directories
 RUN mkdir -p /app/data /app/logs && \
     chown -R appuser:appuser /app/data /app/logs
@@ -49,5 +52,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run application with entrypoint script
+CMD ["/app/scripts/docker-entrypoint.sh"]

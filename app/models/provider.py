@@ -23,6 +23,11 @@ class Provider(Base):
     config = Column(Text, nullable=False)  # JSON string with api_key, base_url, etc
     console = Column(String(255))  # Console URL for provider
     enabled = Column(Boolean, default=True)
+    priority = Column(Integer, default=100, nullable=False)  # Higher priority = tried first
+    weight = Column(Integer, default=100, nullable=False)  # Weight for load balancing
+    max_retries = Column(Integer, default=3, nullable=False)  # Maximum retry attempts
+    timeout = Column(Integer, default=60, nullable=False)  # Request timeout in seconds
+    rate_limit = Column(Integer)  # Optional rate limit (requests per minute)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
