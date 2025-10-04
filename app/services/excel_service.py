@@ -1,11 +1,14 @@
 """
 Excel Import/Export Service
 
-提供提供商、模型配置和模型映射的批量导入导出功能
+提供提供商、模型配置和模型-提供商关联的批量导入导出功能
+使用三工作表架构: Providers, Models, Associations
 """
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from io import BytesIO
-import pandas as pd
+import json
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, Alignment, PatternFill
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -16,7 +19,7 @@ logger = get_logger(__name__)
 
 
 class ExcelService:
-    """Excel 批量导入导出服务"""
+    """Excel 批量导入导出服务 - 三工作表架构"""
     
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -25,227 +28,35 @@ class ExcelService:
     # 导出功能
     # ========================================================================
     
-    async def export_providers(self) -> BytesIO:
+    async def export_all(self, include_sample: bool = False) -> BytesIO:
         """
-        导出提供商列表到 Excel
+        导出所有配置到单个 Excel 文件(三个工作表)
         
+        Args:
+            include_sample: 是否包含示例数据
+            
         Returns:
             BytesIO: Excel 文件的字节流
         """
-        logger.info("Exporting providers to Excel")
+        logger.info("Exporting all data to Excel with 3 sheets")
         
         try:
-            # 查询所有提供商
-            query = select(Provider).order_by(Provider.priority.desc(), Provider.id)
-            result = await self.db.execute(query)
-            providers = result.scalars().all()
+            wb = Workbook()
             
-            # 转换为 DataFrame
-            data = []
-            for p in providers:
-                data.append({
-                    'ID': p.id,
-                    '名称': p.name,
-                    '类型': p.type,
-                    'API密钥': p.api_key,
-                    '基础URL': p.base_url or '',
-                    '优先级': p.priority,
-                    '启用状态': '是' if p.enabled else '否',
-                    '创建时间': p.created_at.strftime('%Y-%m-%d %H:%M:%S') if p.created_at else '',
-                    '更新时间': p.updated_at.strftime('%Y-%m-%d %H:%M:%S') if p.updated_at else ''
-                })
+            # 创建三个工作表
+            await self._create_providers_sheet(wb, include_sample)
+            await self._create_models_sheet(wb, include_sample)
+            await self._create_associations_sheet(wb, include_sample)
             
-            df = pd.DataFrame(data)
+            # 删除默认的Sheet
+            if 'Sheet' in wb.sheetnames:
+                del wb['Sheet']
             
-            # 写入 Excel
+            # 保存到字节流
             output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, sheet_name='提供商', index=False)
-            
+            wb.save(output)
             output.seek(0)
-            logger.info(f"Exported {len(providers)} providers")
-            return output
             
-        except Exception as e:
-            logger.error(f"Failed to export providers: {str(e)}", exc_info=True)
-            raise
-    
-    async def export_models(self) -> BytesIO:
-        """
-        导出模型配置到 Excel
-        
-        Returns:
-            BytesIO: Excel 文件的字节流
-        """
-        logger.info("Exporting models to Excel")
-        
-        try:
-            # 查询所有模型
-            query = select(ModelConfig).order_by(ModelConfig.id)
-            result = await self.db.execute(query)
-            models = result.scalars().all()
-            
-            # 转换为 DataFrame
-            data = []
-            for m in models:
-                data.append({
-                    'ID': m.id,
-                    '模型名称': m.name,
-                    '显示名称': m.display_name or m.name,
-                    '上下文长度': m.context_length,
-                    '最大Tokens': m.max_tokens,
-                    '输入成本(每百万)': m.input_cost_per_million,
-                    '输出成本(每百万)': m.output_cost_per_million,
-                    '支持流式': '是' if m.supports_streaming else '否',
-                    '支持函数': '是' if m.supports_functions else '否',
-                    '支持视觉': '是' if m.supports_vision else '否',
-                    '创建时间': m.created_at.strftime('%Y-%m-%d %H:%M:%S') if m.created_at else ''
-                })
-            
-            df = pd.DataFrame(data)
-            
-            # 写入 Excel
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, sheet_name='模型配置', index=False)
-            
-            output.seek(0)
-            logger.info(f"Exported {len(models)} models")
-            return output
-            
-        except Exception as e:
-            logger.error(f"Failed to export models: {str(e)}", exc_info=True)
-            raise
-    
-    async def export_model_mappings(self) -> BytesIO:
-        """
-        导出模型映射关系到 Excel
-        
-        Returns:
-            BytesIO: Excel 文件的字节流
-        """
-        logger.info("Exporting model mappings to Excel")
-        
-        try:
-            # 查询所有映射关系
-            query = (
-                select(ModelProvider, ModelConfig, Provider)
-                .join(ModelConfig, ModelProvider.model_id == ModelConfig.id)
-                .join(Provider, ModelProvider.provider_id == Provider.id)
-                .order_by(ModelProvider.id)
-            )
-            result = await self.db.execute(query)
-            rows = result.all()
-            
-            # 转换为 DataFrame
-            data = []
-            for mapping, model, provider in rows:
-                data.append({
-                    'ID': mapping.id,
-                    '模型ID': model.id,
-                    '模型名称': model.name,
-                    '提供商ID': provider.id,
-                    '提供商名称': provider.name,
-                    '提供商模型名': mapping.provider_model_name,
-                    '启用状态': '是' if mapping.enabled else '否',
-                    '创建时间': mapping.created_at.strftime('%Y-%m-%d %H:%M:%S') if mapping.created_at else ''
-                })
-            
-            df = pd.DataFrame(data)
-            
-            # 写入 Excel
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, sheet_name='模型映射', index=False)
-            
-            output.seek(0)
-            logger.info(f"Exported {len(rows)} model mappings")
-            return output
-            
-        except Exception as e:
-            logger.error(f"Failed to export model mappings: {str(e)}", exc_info=True)
-            raise
-    
-    async def export_all(self) -> BytesIO:
-        """
-        导出所有数据到单个 Excel 文件(多个工作表)
-        
-        Returns:
-            BytesIO: Excel 文件的字节流
-        """
-        logger.info("Exporting all data to Excel")
-        
-        try:
-            output = BytesIO()
-            
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                # 导出提供商
-                query = select(Provider).order_by(Provider.priority.desc(), Provider.id)
-                result = await self.db.execute(query)
-                providers = result.scalars().all()
-                
-                provider_data = []
-                for p in providers:
-                    provider_data.append({
-                        'ID': p.id,
-                        '名称': p.name,
-                        '类型': p.type,
-                        'API密钥': p.api_key,
-                        '基础URL': p.base_url or '',
-                        '优先级': p.priority,
-                        '启用状态': '是' if p.enabled else '否',
-                        '创建时间': p.created_at.strftime('%Y-%m-%d %H:%M:%S') if p.created_at else ''
-                    })
-                
-                df_providers = pd.DataFrame(provider_data)
-                df_providers.to_excel(writer, sheet_name='提供商', index=False)
-                
-                # 导出模型配置
-                query = select(ModelConfig).order_by(ModelConfig.id)
-                result = await self.db.execute(query)
-                models = result.scalars().all()
-                
-                model_data = []
-                for m in models:
-                    model_data.append({
-                        'ID': m.id,
-                        '模型名称': m.name,
-                        '显示名称': m.display_name or m.name,
-                        '上下文长度': m.context_length,
-                        '最大Tokens': m.max_tokens,
-                        '输入成本': m.input_cost_per_million,
-                        '输出成本': m.output_cost_per_million,
-                        '支持流式': '是' if m.supports_streaming else '否',
-                        '支持函数': '是' if m.supports_functions else '否'
-                    })
-                
-                df_models = pd.DataFrame(model_data)
-                df_models.to_excel(writer, sheet_name='模型配置', index=False)
-                
-                # 导出模型映射
-                query = (
-                    select(ModelProvider, ModelConfig, Provider)
-                    .join(ModelConfig, ModelProvider.model_id == ModelConfig.id)
-                    .join(Provider, ModelProvider.provider_id == Provider.id)
-                    .order_by(ModelProvider.id)
-                )
-                result = await self.db.execute(query)
-                rows = result.all()
-                
-                mapping_data = []
-                for mapping, model, provider in rows:
-                    mapping_data.append({
-                        'ID': mapping.id,
-                        '模型名称': model.name,
-                        '提供商名称': provider.name,
-                        '提供商模型名': mapping.provider_model_name,
-                        '启用状态': '是' if mapping.enabled else '否'
-                    })
-                
-                df_mappings = pd.DataFrame(mapping_data)
-                df_mappings.to_excel(writer, sheet_name='模型映射', index=False)
-            
-            output.seek(0)
             logger.info("Exported all data successfully")
             return output
             
@@ -253,157 +64,477 @@ class ExcelService:
             logger.error(f"Failed to export all data: {str(e)}", exc_info=True)
             raise
     
+    async def _create_providers_sheet(self, wb: Workbook, include_sample: bool = False):
+        """创建 Providers 工作表"""
+        ws = wb.active
+        ws.title = "Providers"
+        
+        # 设置表头
+        headers = ['name', 'type', 'api_key', 'base_url', 'priority', 'weight', 'enabled']
+        ws.append(headers)
+        
+        # 设置表头样式
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center')
+        
+        # 获取现有数据
+        query = select(Provider).order_by(Provider.priority.desc(), Provider.id)
+        result = await self.db.execute(query)
+        providers = result.scalars().all()
+        
+        for p in providers:
+            ws.append([
+                p.name,
+                p.type,
+                p.api_key,
+                p.base_url or '',
+                p.priority,
+                p.weight,
+                'true' if p.enabled else 'false'
+            ])
+        
+        # 如果需要示例数据
+        if include_sample and not providers:
+            ws.append([
+                'OpenAI-Main',
+                'openai',
+                'sk-xxx',
+                'https://api.openai.com/v1',
+                100,
+                100,
+                'true'
+            ])
+            ws.append([
+                'Anthropic-Main',
+                'anthropic',
+                'sk-ant-xxx',
+                'https://api.anthropic.com/v1',
+                100,
+                100,
+                'true'
+            ])
+        
+        # 调整列宽
+        ws.column_dimensions['A'].width = 20
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 30
+        ws.column_dimensions['D'].width = 35
+        ws.column_dimensions['E'].width = 10
+        ws.column_dimensions['F'].width = 10
+        ws.column_dimensions['G'].width = 10
+    
+    async def _create_models_sheet(self, wb: Workbook, include_sample: bool = False):
+        """创建 Models 工作表"""
+        ws = wb.create_sheet("Models")
+        
+        # 设置表头
+        headers = ['name', 'remark', 'max_retry', 'timeout']
+        ws.append(headers)
+        
+        # 设置表头样式
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center')
+        
+        # 获取现有数据
+        query = select(ModelConfig).order_by(ModelConfig.id)
+        result = await self.db.execute(query)
+        models = result.scalars().all()
+        
+        for m in models:
+            ws.append([
+                m.name,
+                m.display_name or '',
+                3,  # 默认最大重试次数
+                60  # 默认超时时间(秒)
+            ])
+        
+        # 如果需要示例数据
+        if include_sample and not models:
+            ws.append(['gpt-4o', 'GPT-4 Optimized', 3, 60])
+            ws.append(['claude-3.5-sonnet', 'Claude 3.5 Sonnet', 3, 60])
+        
+        # 调整列宽
+        ws.column_dimensions['A'].width = 25
+        ws.column_dimensions['B'].width = 30
+        ws.column_dimensions['C'].width = 12
+        ws.column_dimensions['D'].width = 10
+    
+    async def _create_associations_sheet(self, wb: Workbook, include_sample: bool = False):
+        """创建 Associations 工作表"""
+        ws = wb.create_sheet("Associations")
+        
+        # 设置表头
+        headers = ['model_name', 'provider_name', 'provider_model', 
+                   'supports_tools', 'supports_vision', 'weight', 'enabled']
+        ws.append(headers)
+        
+        # 设置表头样式
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center')
+        
+        # 获取现有数据
+        query = (
+            select(ModelProvider, ModelConfig, Provider)
+            .join(ModelConfig, ModelProvider.model_id == ModelConfig.id)
+            .join(Provider, ModelProvider.provider_id == Provider.id)
+            .order_by(ModelProvider.id)
+        )
+        result = await self.db.execute(query)
+        rows = result.all()
+        
+        for mapping, model, provider in rows:
+            ws.append([
+                model.name,
+                provider.name,
+                mapping.provider_model_name,
+                'true' if mapping.supports_tools else 'false',
+                'true' if mapping.supports_vision else 'false',
+                mapping.weight,
+                'true' if mapping.enabled else 'false'
+            ])
+        
+        # 如果需要示例数据
+        if include_sample and not rows:
+            ws.append(['gpt-4o', 'OpenAI-Main', 'gpt-4o-2024-05-13', 'true', 'true', 100, 'true'])
+            ws.append(['claude-3.5-sonnet', 'Anthropic-Main', 'claude-3-5-sonnet-20241022', 'true', 'true', 100, 'true'])
+        
+        # 调整列宽
+        ws.column_dimensions['A'].width = 25
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 30
+        ws.column_dimensions['D'].width = 15
+        ws.column_dimensions['E'].width = 15
+        ws.column_dimensions['F'].width = 10
+        ws.column_dimensions['G'].width = 10
+    
+    async def download_template(self, with_sample: bool = False) -> BytesIO:
+        """
+        下载导入模板
+        
+        Args:
+            with_sample: 是否包含示例数据
+            
+        Returns:
+            BytesIO: Excel 模板文件
+        """
+        return await self.export_all(include_sample=with_sample)
+    
     # ========================================================================
     # 导入功能
     # ========================================================================
     
-    async def import_providers(self, file: BytesIO, skip_duplicates: bool = True) -> Dict[str, Any]:
+    async def import_all(self, file: BytesIO) -> Dict[str, Any]:
         """
-        从 Excel 导入提供商
+        从 Excel 导入所有配置(三个工作表)
         
         Args:
             file: Excel 文件的字节流
-            skip_duplicates: 是否跳过重复的提供商
             
         Returns:
             导入结果统计
         """
-        logger.info("Importing providers from Excel")
+        logger.info("Importing all data from Excel with 3 sheets")
         
         try:
-            # 读取 Excel
-            df = pd.read_excel(file, sheet_name=0)
+            wb = load_workbook(file)
             
-            created = 0
-            skipped = 0
-            errors = []
+            # 创建名称到ID的映射
+            provider_map = {}
+            model_map = {}
             
-            for index, row in df.iterrows():
-                try:
-                    name = str(row.get('名称', ''))
-                    if not name:
-                        errors.append(f"行 {index + 2}: 名称不能为空")
-                        continue
-                    
-                    # 检查是否已存在
-                    query = select(Provider).where(Provider.name == name)
-                    result = await self.db.execute(query)
-                    existing = result.scalar_one_or_none()
-                    
-                    if existing and skip_duplicates:
-                        skipped += 1
-                        continue
-                    
-                    if existing:
-                        errors.append(f"行 {index + 2}: 提供商 '{name}' 已存在")
-                        continue
-                    
-                    # 创建提供商
-                    provider = Provider(
-                        name=name,
-                        type=str(row.get('类型', 'openai')),
-                        api_key=str(row.get('API密钥', '')),
-                        base_url=str(row.get('基础URL', '')) if pd.notna(row.get('基础URL')) else None,
-                        priority=int(row.get('优先级', 100)),
-                        enabled=str(row.get('启用状态', '是')) == '是'
-                    )
-                    
-                    self.db.add(provider)
-                    created += 1
-                    
-                except Exception as e:
-                    errors.append(f"行 {index + 2}: {str(e)}")
+            # 导入提供商
+            providers_stats = await self._import_providers_sheet(wb, provider_map)
             
-            await self.db.commit()
+            # 导入模型
+            models_stats = await self._import_models_sheet(wb, model_map)
             
+            # 导入关联
+            associations_stats = await self._import_associations_sheet(wb, provider_map, model_map)
+            
+            # 计算总结
             result = {
-                'created': created,
-                'skipped': skipped,
-                'total': len(df),
-                'errors': errors
+                'providers': providers_stats,
+                'models': models_stats,
+                'associations': associations_stats,
+                'summary': {
+                    'total_imported': (
+                        providers_stats['imported'] + 
+                        models_stats['imported'] + 
+                        associations_stats['imported']
+                    ),
+                    'total_skipped': (
+                        providers_stats['skipped'] + 
+                        models_stats['skipped'] + 
+                        associations_stats['skipped']
+                    ),
+                    'total_errors': (
+                        len(providers_stats['errors']) + 
+                        len(models_stats['errors']) + 
+                        len(associations_stats['errors'])
+                    )
+                }
             }
             
-            logger.info(f"Import completed: {result}")
+            logger.info(f"Import completed: {result['summary']}")
             return result
             
         except Exception as e:
             await self.db.rollback()
-            logger.error(f"Failed to import providers: {str(e)}", exc_info=True)
+            logger.error(f"Failed to import data: {str(e)}", exc_info=True)
             raise
     
-    async def import_models(self, file: BytesIO, skip_duplicates: bool = True) -> Dict[str, Any]:
-        """
-        从 Excel 导入模型配置
+    async def _import_providers_sheet(self, wb: Workbook, provider_map: Dict[str, int]) -> Dict[str, Any]:
+        """导入 Providers 工作表"""
+        stats = {
+            'total': 0,
+            'imported': 0,
+            'skipped': 0,
+            'errors': []
+        }
         
-        Args:
-            file: Excel 文件的字节流
-            skip_duplicates: 是否跳过重复的模型
-            
-        Returns:
-            导入结果统计
-        """
-        logger.info("Importing models from Excel")
+        if 'Providers' not in wb.sheetnames:
+            stats['errors'].append({'row': 0, 'field': 'sheet', 'error': 'Providers sheet not found'})
+            return stats
         
-        try:
-            # 读取 Excel
-            df = pd.read_excel(file, sheet_name=0)
+        ws = wb['Providers']
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        
+        for row_num, row in enumerate(rows, start=2):
+            stats['total'] += 1
             
-            created = 0
-            skipped = 0
-            errors = []
+            try:
+                if not row or all(cell is None for cell in row):
+                    continue
+                
+                name = str(row[0]).strip() if row[0] else ''
+                if not name:
+                    stats['errors'].append({
+                        'row': row_num,
+                        'field': 'name',
+                        'error': 'Name is required'
+                    })
+                    continue
+                
+                # 检查是否已存在
+                query = select(Provider).where(Provider.name == name)
+                result = await self.db.execute(query)
+                existing = result.scalar_one_or_none()
+                
+                if existing:
+                    provider_map[name] = existing.id
+                    stats['skipped'] += 1
+                    continue
+                
+                # 创建提供商
+                provider = Provider(
+                    name=name,
+                    type=str(row[1]).strip() if row[1] else 'openai',
+                    api_key=str(row[2]).strip() if row[2] else '',
+                    base_url=str(row[3]).strip() if row[3] else None,
+                    priority=int(row[4]) if row[4] and str(row[4]).isdigit() else 100,
+                    weight=int(row[5]) if row[5] and str(row[5]).isdigit() else 100,
+                    enabled=str(row[6]).lower() == 'true' if row[6] else True
+                )
+                
+                self.db.add(provider)
+                await self.db.flush()
+                
+                provider_map[name] = provider.id
+                stats['imported'] += 1
+                
+            except Exception as e:
+                stats['errors'].append({
+                    'row': row_num,
+                    'field': 'database',
+                    'error': str(e)
+                })
+        
+        await self.db.commit()
+        return stats
+    
+    async def _import_models_sheet(self, wb: Workbook, model_map: Dict[str, int]) -> Dict[str, Any]:
+        """导入 Models 工作表"""
+        stats = {
+            'total': 0,
+            'imported': 0,
+            'skipped': 0,
+            'errors': []
+        }
+        
+        if 'Models' not in wb.sheetnames:
+            stats['errors'].append({'row': 0, 'field': 'sheet', 'error': 'Models sheet not found'})
+            return stats
+        
+        ws = wb['Models']
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        
+        for row_num, row in enumerate(rows, start=2):
+            stats['total'] += 1
             
-            for index, row in df.iterrows():
-                try:
-                    name = str(row.get('模型名称', ''))
-                    if not name:
-                        errors.append(f"行 {index + 2}: 模型名称不能为空")
-                        continue
-                    
-                    # 检查是否已存在
-                    query = select(ModelConfig).where(ModelConfig.name == name)
-                    result = await self.db.execute(query)
-                    existing = result.scalar_one_or_none()
-                    
-                    if existing and skip_duplicates:
-                        skipped += 1
-                        continue
-                    
-                    if existing:
-                        errors.append(f"行 {index + 2}: 模型 '{name}' 已存在")
-                        continue
-                    
-                    # 创建模型
-                    model = ModelConfig(
-                        name=name,
-                        display_name=str(row.get('显示名称', name)),
-                        context_length=int(row.get('上下文长度', 4096)),
-                        max_tokens=int(row.get('最大Tokens', 4096)),
-                        input_cost_per_million=float(row.get('输入成本(每百万)', 0)),
-                        output_cost_per_million=float(row.get('输出成本(每百万)', 0)),
-                        supports_streaming=str(row.get('支持流式', '是')) == '是',
-                        supports_functions=str(row.get('支持函数', '否')) == '是',
-                        supports_vision=str(row.get('支持视觉', '否')) == '是'
-                    )
-                    
-                    self.db.add(model)
-                    created += 1
-                    
-                except Exception as e:
-                    errors.append(f"行 {index + 2}: {str(e)}")
+            try:
+                if not row or all(cell is None for cell in row):
+                    continue
+                
+                name = str(row[0]).strip() if row[0] else ''
+                if not name:
+                    stats['errors'].append({
+                        'row': row_num,
+                        'field': 'name',
+                        'error': 'Name is required'
+                    })
+                    continue
+                
+                # 检查是否已存在
+                query = select(ModelConfig).where(ModelConfig.name == name)
+                result = await self.db.execute(query)
+                existing = result.scalar_one_or_none()
+                
+                if existing:
+                    model_map[name] = existing.id
+                    stats['skipped'] += 1
+                    continue
+                
+                # 创建模型
+                model = ModelConfig(
+                    name=name,
+                    display_name=str(row[1]).strip() if row[1] else name,
+                    context_length=4096,  # 默认值
+                    max_tokens=4096,  # 默认值
+                    supports_streaming=True,
+                    supports_functions=True,
+                    supports_vision=False
+                )
+                
+                self.db.add(model)
+                await self.db.flush()
+                
+                model_map[name] = model.id
+                stats['imported'] += 1
+                
+            except Exception as e:
+                stats['errors'].append({
+                    'row': row_num,
+                    'field': 'database',
+                    'error': str(e)
+                })
+        
+        await self.db.commit()
+        return stats
+    
+    async def _import_associations_sheet(
+        self, 
+        wb: Workbook, 
+        provider_map: Dict[str, int],
+        model_map: Dict[str, int]
+    ) -> Dict[str, Any]:
+        """导入 Associations 工作表"""
+        stats = {
+            'total': 0,
+            'imported': 0,
+            'skipped': 0,
+            'errors': []
+        }
+        
+        if 'Associations' not in wb.sheetnames:
+            stats['errors'].append({'row': 0, 'field': 'sheet', 'error': 'Associations sheet not found'})
+            return stats
+        
+        ws = wb['Associations']
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        
+        for row_num, row in enumerate(rows, start=2):
+            stats['total'] += 1
             
-            await self.db.commit()
-            
-            result = {
-                'created': created,
-                'skipped': skipped,
-                'total': len(df),
-                'errors': errors
-            }
-            
-            logger.info(f"Import completed: {result}")
-            return result
-            
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Failed to import models: {str(e)}", exc_info=True)
-            raise
+            try:
+                if not row or all(cell is None for cell in row):
+                    continue
+                
+                model_name = str(row[0]).strip() if row[0] else ''
+                provider_name = str(row[1]).strip() if row[1] else ''
+                provider_model = str(row[2]).strip() if row[2] else ''
+                
+                # 验证必填字段
+                if not model_name:
+                    stats['errors'].append({
+                        'row': row_num,
+                        'field': 'model_name',
+                        'error': 'Model name is required'
+                    })
+                    continue
+                
+                if not provider_name:
+                    stats['errors'].append({
+                        'row': row_num,
+                        'field': 'provider_name',
+                        'error': 'Provider name is required'
+                    })
+                    continue
+                
+                # 查找模型ID和提供商ID
+                model_id = model_map.get(model_name)
+                provider_id = provider_map.get(provider_name)
+                
+                if not model_id:
+                    stats['errors'].append({
+                        'row': row_num,
+                        'field': 'model_name',
+                        'error': f"Model '{model_name}' not found"
+                    })
+                    continue
+                
+                if not provider_id:
+                    stats['errors'].append({
+                        'row': row_num,
+                        'field': 'provider_name',
+                        'error': f"Provider '{provider_name}' not found"
+                    })
+                    continue
+                
+                # 检查是否已存在
+                query = select(ModelProvider).where(
+                    ModelProvider.model_id == model_id,
+                    ModelProvider.provider_id == provider_id,
+                    ModelProvider.provider_model_name == provider_model
+                )
+                result = await self.db.execute(query)
+                existing = result.scalar_one_or_none()
+                
+                if existing:
+                    stats['skipped'] += 1
+                    continue
+                
+                # 创建关联
+                association = ModelProvider(
+                    model_id=model_id,
+                    provider_id=provider_id,
+                    provider_model_name=provider_model,
+                    supports_tools=str(row[3]).lower() == 'true' if row[3] else False,
+                    supports_vision=str(row[4]).lower() == 'true' if row[4] else False,
+                    weight=int(row[5]) if row[5] and str(row[5]).isdigit() else 100,
+                    enabled=str(row[6]).lower() == 'true' if row[6] else True
+                )
+                
+                self.db.add(association)
+                stats['imported'] += 1
+                
+            except Exception as e:
+                stats['errors'].append({
+                    'row': row_num,
+                    'field': 'database',
+                    'error': str(e)
+                })
+        
+        await self.db.commit()
+        return stats

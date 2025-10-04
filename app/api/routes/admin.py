@@ -4,7 +4,7 @@ Admin API routes for provider and system management.
 from typing import List, Optional
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, File, UploadFile
 from sqlalchemy import select, func, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1224,4 +1224,190 @@ async def get_model_provider_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get status: {str(e)}"
+        )
+
+
+# ============================================================================
+# Excel Import/Export
+# ============================================================================
+
+@router.get(
+    "/export/template",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def download_excel_template(
+    with_sample: bool = Query(False, description="Include sample data"),
+    db: AsyncSession = Depends(get_database)
+):
+    """Download Excel import template (3 sheets: Providers, Models, Associations)."""
+    logger.info(f"Downloading Excel template, with_sample={with_sample}")
+    
+    try:
+        from fastapi.responses import StreamingResponse
+        from app.services.excel_service import ExcelService
+        
+        excel_service = ExcelService(db)
+        excel_file = await excel_service.download_template(with_sample=with_sample)
+        
+        filename = f"llm_orchestrator_template_{'with_sample' if with_sample else 'empty'}.xlsx"
+        
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"Failed to download template: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download template: {str(e)}"
+        )
+
+
+@router.get(
+    "/export/config",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def export_configuration(
+    db: AsyncSession = Depends(get_database)
+):
+    """Export all configuration (providers, models, associations) to Excel."""
+    logger.info("Exporting all configuration to Excel")
+    
+    try:
+        from fastapi.responses import StreamingResponse
+        from app.services.excel_service import ExcelService
+        from datetime import datetime
+        
+        excel_service = ExcelService(db)
+        excel_file = await excel_service.export_all(include_sample=False)
+        
+        filename = f"llm_orchestrator_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"Failed to export configuration: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export configuration: {str(e)}"
+        )
+
+
+@router.post(
+    "/import/config",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def import_configuration(
+    file: bytes = None,
+    db: AsyncSession = Depends(get_database),
+    cache: RedisCache = Depends(get_cache)
+):
+    """Import configuration from Excel file (3 sheets: Providers, Models, Associations)."""
+    logger.info("Importing configuration from Excel")
+    
+    try:
+        from fastapi import File, UploadFile
+        from io import BytesIO
+        from app.services.excel_service import ExcelService
+        
+        if not file:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No file provided"
+            )
+        
+        # Convert bytes to BytesIO
+        file_stream = BytesIO(file)
+        
+        # Import data
+        excel_service = ExcelService(db)
+        result = await excel_service.import_all(file_stream)
+        
+        # Invalidate all caches
+        await cache.delete("providers:*")
+        await cache.delete("models:*")
+        await cache.delete("model-providers:*")
+        
+        logger.info(f"Import completed: {result['summary']}")
+        
+        return {
+            "message": "Configuration imported successfully",
+            "result": result
+        }
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to import configuration: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import configuration: {str(e)}"
+        )
+
+
+@router.post(
+    "/import/config/upload",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def import_configuration_upload(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_database),
+    cache: RedisCache = Depends(get_cache)
+):
+    """Import configuration from uploaded Excel file."""
+    logger.info(f"Importing configuration from uploaded file: {file.filename}")
+    
+    try:
+        from io import BytesIO
+        from app.services.excel_service import ExcelService
+        
+        # Validate file extension
+        if not file.filename.lower().endswith('.xlsx'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only .xlsx files are supported"
+            )
+        
+        # Read file content
+        content = await file.read()
+        file_stream = BytesIO(content)
+        
+        # Import data
+        excel_service = ExcelService(db)
+        result = await excel_service.import_all(file_stream)
+        
+        # Invalidate all caches
+        await cache.delete("providers:*")
+        await cache.delete("models:*")
+        await cache.delete("model-providers:*")
+        
+        logger.info(f"Import completed: {result['summary']}")
+        
+        return {
+            "message": "Configuration imported successfully",
+            "filename": file.filename,
+            "result": result
+        }
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to import configuration: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import configuration: {str(e)}"
         )
