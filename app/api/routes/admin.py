@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -516,7 +516,7 @@ async def get_system_stats(
         query = select(
             func.count(RequestLog.id).label("total"),
             func.sum(
-                func.case(
+                case(
                     (RequestLog.status_code == 200, 1),
                     else_=0
                 )
@@ -539,7 +539,7 @@ async def get_system_stats(
                 Provider.id,
                 Provider.name,
                 func.count(RequestLog.id).label("total"),
-                func.sum(func.case((RequestLog.status_code == 200, 1), else_=0)).label("success"),
+                func.sum(case((RequestLog.status_code == 200, 1), else_=0)).label("success"),
                 func.avg(RequestLog.latency_ms).label("avg_latency"),
                 func.sum(func.coalesce(RequestLog.total_tokens, 0)).label("total_tokens"),
                 func.sum(func.coalesce(RequestLog.cost, 0)).label("total_cost")
