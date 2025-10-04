@@ -107,6 +107,9 @@ async function loadTabData(tabName) {
         case 'models':
             await loadModels();
             break;
+        case 'associations':
+            await loadAssociations();
+            break;
         case 'logs':
             await loadLogs();
             break;
@@ -618,6 +621,249 @@ async function loadLogs() {
     }
 }
 
+// ==================== 模型-提供商关联管理 ====================
+
+let allAssociations = [];
+let allModelsForFilter = [];
+let allProvidersForFilter = [];
+
+async function loadAssociations() {
+    try {
+        // 加载关联、模型和提供商数据
+        const [associations, models, providers] = await Promise.all([
+            utils.request('/api/admin/model-providers', { useAdmin: true }),
+            utils.request('/api/admin/models', { useAdmin: true }),
+            utils.request('/api/admin/providers', { useAdmin: true })
+        ]);
+        
+        allAssociations = associations;
+        allModelsForFilter = models;
+        allProvidersForFilter = providers;
+        
+        // 加载每个关联的状态历史
+        await loadAssociationStatuses();
+        
+        // 填充筛选器
+        populateAssociationFilters();
+        
+        // 填充模态框的选择器
+        populateAssociationSelects();
+        
+        // 渲染表格
+        renderAssociationsTable();
+        
+    } catch (error) {
+        console.error('Failed to load associations:', error);
+    }
+}
+
+async function loadAssociationStatuses() {
+    const statusPromises = allAssociations.map(async (assoc) => {
+        try {
+            const response = await utils.request(
+                `/api/admin/model-providers/${assoc.id}/status?limit=10`,
+                { useAdmin: true }
+            );
+            assoc.status_history = response.status_history || [];
+        } catch (error) {
+            console.error(`Failed to load status for association ${assoc.id}:`, error);
+            assoc.status_history = [];
+        }
+    });
+    
+    await Promise.all(statusPromises);
+}
+
+function populateAssociationFilters() {
+    // 提供商类型筛选器
+    const typeFilter = document.getElementById('provider-type-filter');
+    const types = [...new Set(allProvidersForFilter.map(p => p.type))].filter(Boolean);
+    
+    typeFilter.innerHTML = '<option value="">全部提供商类型</option>';
+    types.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type;
+        typeFilter.appendChild(option);
+    });
+    
+    // 模型筛选器
+    const modelFilter = document.getElementById('model-filter');
+    modelFilter.innerHTML = '<option value="">全部模型</option>';
+    allModelsForFilter.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.name;
+        modelFilter.appendChild(option);
+    });
+}
+
+function populateAssociationSelects() {
+    // 模型选择器
+    const modelSelect = document.getElementById('association-model-select');
+    modelSelect.innerHTML = '<option value="">选择模型</option>';
+    allModelsForFilter.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.name;
+        modelSelect.appendChild(option);
+    });
+    
+    // 提供商选择器
+    const providerSelect = document.getElementById('association-provider-select');
+    providerSelect.innerHTML = '<option value="">选择提供商</option>';
+    allProvidersForFilter.forEach(provider => {
+        const option = document.createElement('option');
+        option.value = provider.id;
+        option.textContent = `${provider.name} (${provider.type})`;
+        providerSelect.appendChild(option);
+    });
+}
+
+function filterAssociations() {
+    const modelId = document.getElementById('model-filter').value;
+    const providerType = document.getElementById('provider-type-filter').value;
+    
+    let filtered = allAssociations;
+    
+    if (modelId) {
+        filtered = filtered.filter(a => a.model_id == modelId);
+    }
+    
+    if (providerType) {
+        filtered = filtered.filter(a => a.provider_type === providerType);
+    }
+    
+    renderAssociationsTable(filtered);
+}
+
+function renderAssociationsTable(data = allAssociations) {
+    const tbody = document.getElementById('associations-tbody');
+    
+    if (data.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="11" style="text-align: center; padding: 40px;">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📋</div>
+                        <div class="empty-state-text">暂无模型-提供商关联</div>
+                    </div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = data.map(assoc => `
+        <tr>
+            <td>${assoc.id}</td>
+            <td>${assoc.model_name}</td>
+            <td>${assoc.provider_name}</td>
+            <td>${assoc.provider_type}</td>
+            <td>${assoc.provider_model}</td>
+            <td>${assoc.weight}</td>
+            <td>
+                <span class="badge badge-${assoc.tool_call ? 'success' : 'danger'}">
+                    ${assoc.tool_call ? '✓' : '✗'}
+                </span>
+            </td>
+            <td>
+                <span class="badge badge-${assoc.structured_output ? 'success' : 'danger'}">
+                    ${assoc.structured_output ? '✓' : '✗'}
+                </span>
+            </td>
+            <td>
+                <span class="badge badge-${assoc.image ? 'success' : 'danger'}">
+                    ${assoc.image ? '✓' : '✗'}
+                </span>
+            </td>
+            <td>${renderStatusBars(assoc.status_history || [])}</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="editAssociation(${assoc.id})">编辑</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteAssociation(${assoc.id})">删除</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function renderStatusBars(statusHistory) {
+    if (!statusHistory || statusHistory.length === 0) {
+        return '<span style="color: var(--text-secondary); font-size: 12px;">无数据</span>';
+    }
+    
+    const bars = statusHistory.map(isSuccess =>
+        `<div style="width: 4px; height: 24px; background: ${isSuccess ? 'var(--success-color)' : 'var(--danger-color)'}; display: inline-block; margin-right: 2px;"
+              title="${isSuccess ? '成功' : '失败'}"></div>`
+    ).join('');
+    
+    return `<div style="display: flex; gap: 2px; align-items: flex-end; height: 24px;">${bars}</div>`;
+}
+
+function showAddAssociationModal() {
+    document.getElementById('association-id').value = '';
+    document.getElementById('association-modal-title').textContent = '添加模型-提供商关联';
+    document.getElementById('association-submit-text').textContent = '创建';
+    
+    // 重置表单
+    document.getElementById('association-form').reset();
+    document.getElementById('association-weight').value = 1;
+    document.getElementById('association-tool-call').checked = true;
+    document.getElementById('association-structured-output').checked = true;
+    document.getElementById('association-image').checked = false;
+    document.getElementById('association-enabled').checked = true;
+    
+    // 启用模型和提供商选择器
+    document.getElementById('association-model-select').disabled = false;
+    document.getElementById('association-provider-select').disabled = false;
+    
+    document.getElementById('association-modal').classList.add('active');
+}
+
+async function editAssociation(id) {
+    const assoc = allAssociations.find(a => a.id === id);
+    if (!assoc) return;
+    
+    document.getElementById('association-id').value = id;
+    document.getElementById('association-modal-title').textContent = '编辑模型-提供商关联';
+    document.getElementById('association-submit-text').textContent = '更新';
+    
+    // 填充表单 - 禁用模型和提供商选择(不可修改)
+    const modelSelect = document.getElementById('association-model-select');
+    const providerSelect = document.getElementById('association-provider-select');
+    
+    modelSelect.value = assoc.model_id;
+    modelSelect.disabled = true;
+    
+    providerSelect.value = assoc.provider_id;
+    providerSelect.disabled = true;
+    
+    // 可编辑字段
+    document.getElementById('association-provider-model').value = assoc.provider_model;
+    document.getElementById('association-weight').value = assoc.weight;
+    document.getElementById('association-tool-call').checked = assoc.tool_call;
+    document.getElementById('association-structured-output').checked = assoc.structured_output;
+    document.getElementById('association-image').checked = assoc.image;
+    document.getElementById('association-enabled').checked = assoc.enabled;
+    
+    document.getElementById('association-modal').classList.add('active');
+}
+
+async function deleteAssociation(id) {
+    if (!confirm('确定要删除这个关联吗?')) return;
+    
+    try {
+        await utils.request(`/api/admin/model-providers/${id}`, {
+            method: 'DELETE',
+            useAdmin: true
+        });
+        
+        utils.showAlert('删除成功', 'success');
+        await loadAssociations();
+    } catch (error) {
+        console.error('Failed to delete association:', error);
+    }
+}
+
 // ==================== Excel 统一导入导出功能 ====================
 
 /**
@@ -978,6 +1224,51 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ${error.message}
                     </div>
                 `;
+            }
+        });
+    }
+    
+    // 绑定关联表单
+    const associationForm = document.getElementById('association-form');
+    if (associationForm) {
+        associationForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const id = document.getElementById('association-id').value;
+            const formData = {
+                model_id: parseInt(document.getElementById('association-model-select').value),
+                provider_id: parseInt(document.getElementById('association-provider-select').value),
+                provider_model: document.getElementById('association-provider-model').value,
+                weight: parseInt(document.getElementById('association-weight').value),
+                tool_call: document.getElementById('association-tool-call').checked,
+                structured_output: document.getElementById('association-structured-output').checked,
+                image: document.getElementById('association-image').checked,
+                enabled: document.getElementById('association-enabled').checked
+            };
+            
+            try {
+                const url = id
+                    ? `/api/admin/model-providers/${id}`
+                    : '/api/admin/model-providers';
+                
+                const method = id ? 'PATCH' : 'POST';
+                
+                await utils.request(url, {
+                    method,
+                    useAdmin: true,
+                    body: JSON.stringify(formData)
+                });
+                
+                utils.showAlert(id ? '更新成功' : '创建成功', 'success');
+                closeModal('association-modal');
+                
+                // 重新启用选择框
+                document.getElementById('association-model-select').disabled = false;
+                document.getElementById('association-provider-select').disabled = false;
+                
+                await loadAssociations();
+            } catch (error) {
+                console.error('Failed to save association:', error);
             }
         });
     }

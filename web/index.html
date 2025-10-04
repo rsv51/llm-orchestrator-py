@@ -458,7 +458,7 @@
             <button class="nav-tab active" onclick="switchTab('dashboard')">仪表盘</button>
             <button class="nav-tab" onclick="switchTab('providers')">提供商管理</button>
             <button class="nav-tab" onclick="switchTab('models')">模型配置</button>
-            <button class="nav-tab" onclick="window.location.href='model-providers.html'">模型-提供商关联</button>
+            <button class="nav-tab" onclick="switchTab('associations')">模型-提供商关联</button>
             <button class="nav-tab" onclick="switchTab('logs')">请求日志</button>
             <button class="nav-tab" onclick="switchTab('settings')">系统设置</button>
         </div>
@@ -590,6 +590,49 @@
                             </tr>
                         </thead>
                         <tbody id="logs-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Model-Provider Associations Tab -->
+        <div id="associations" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">模型-提供商关联</h3>
+                    <button class="btn btn-primary" onclick="showAddAssociationModal()">
+                        <span>➕</span> 添加关联
+                    </button>
+                </div>
+                
+                <!-- 筛选器 -->
+                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <select id="provider-type-filter" class="form-control" style="max-width: 200px;" onchange="filterAssociations()">
+                        <option value="">全部提供商类型</option>
+                    </select>
+                    <select id="model-filter" class="form-control" style="max-width: 200px;" onchange="filterAssociations()">
+                        <option value="">全部模型</option>
+                    </select>
+                </div>
+                
+                <div class="table-container">
+                    <table id="associations-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>模型名称</th>
+                                <th>提供商</th>
+                                <th>类型</th>
+                                <th>提供商模型</th>
+                                <th>权重</th>
+                                <th>工具调用</th>
+                                <th>结构化输出</th>
+                                <th>视觉</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="associations-tbody"></tbody>
                     </table>
                 </div>
             </div>
@@ -776,6 +819,66 @@
                 </div>
             </form>
             <div id="unified-import-result" style="margin-top: 20px; display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Association Modal -->
+    <div id="association-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="association-modal-title">添加模型-提供商关联</h3>
+                <button class="close-btn" onclick="closeModal('association-modal')">×</button>
+            </div>
+            <form id="association-form">
+                <input type="hidden" id="association-id">
+                <div class="form-group">
+                    <label class="form-label">模型 *</label>
+                    <select class="form-control" id="association-model-select" required>
+                        <option value="">选择模型</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">提供商 *</label>
+                    <select class="form-control" id="association-provider-select" required>
+                        <option value="">选择提供商</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">提供商模型名称 *</label>
+                    <input type="text" class="form-control" id="association-provider-model" required
+                           placeholder="例如: gpt-4, claude-3-sonnet-20240229">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">权重</label>
+                    <input type="number" class="form-control" id="association-weight" value="1" min="1" max="1000">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="association-tool-call" checked> 支持工具调用
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="association-structured-output" checked> 支持结构化输出
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="association-image"> 支持视觉输入
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="association-enabled" checked> 启用
+                    </label>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="button" class="btn" onclick="closeModal('association-modal')">取消</button>
+                    <button type="submit" class="btn btn-primary">
+                        <span id="association-submit-text">创建</span>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
