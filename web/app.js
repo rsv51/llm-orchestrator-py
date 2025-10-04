@@ -273,29 +273,66 @@ document.getElementById('add-provider-form').addEventListener('submit', async (e
     }
 });
 
+// 处理添加模型表单
+document.getElementById('add-model-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const data = {
+        name: formData.get('name'),
+        display_name: formData.get('display_name') || null,
+        description: formData.get('description') || null,
+        context_length: parseInt(formData.get('context_length')),
+        max_output_tokens: parseInt(formData.get('max_output_tokens')) || null,
+        input_price_per_million: parseFloat(formData.get('input_price_per_million')),
+        output_price_per_million: parseFloat(formData.get('output_price_per_million')),
+        supports_streaming: formData.get('supports_streaming') === 'on',
+        supports_functions: formData.get('supports_functions') === 'on',
+        supports_vision: formData.get('supports_vision') === 'on'
+    };
+    
+    try {
+        await utils.request('/admin/models', {
+            method: 'POST',
+            useAdmin: true,
+            body: JSON.stringify(data)
+        });
+        
+        utils.showAlert('模型配置添加成功', 'success');
+        closeModal('add-model-modal');
+        e.target.reset();
+        await loadModels();
+    } catch (error) {
+        console.error('Failed to add model:', error);
+    }
+});
+
 // 模型管理
 async function loadModels() {
     try {
-        const models = await utils.request('/v1/models', { useAdmin: true });
+        const models = await utils.request('/admin/models', { useAdmin: true });
         
         const tbody = document.getElementById('models-tbody');
         
-        if (!models.data || models.data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="empty-state-text">暂无模型</td></tr>';
+        if (!models || models.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state-text">暂无模型配置</td></tr>';
             return;
         }
         
-        tbody.innerHTML = models.data.map(m => `
+        tbody.innerHTML = models.map(m => `
             <tr>
-                <td>${m.id}</td>
-                <td>${m.id}</td>
-                <td>4096</td>
-                <td>4096</td>
+                <td>${m.name}</td>
+                <td>${m.display_name || m.name}</td>
+                <td>${utils.formatNumber(m.context_length)}</td>
+                <td>${m.max_output_tokens ? utils.formatNumber(m.max_output_tokens) : 'N/A'}</td>
                 <td>
-                    <span class="badge badge-success">Streaming</span>
+                    ${m.supports_streaming ? '<span class="badge badge-success">流式</span>' : ''}
+                    ${m.supports_functions ? '<span class="badge badge-success">函数</span>' : ''}
+                    ${m.supports_vision ? '<span class="badge badge-success">视觉</span>' : ''}
                 </td>
                 <td>
-                    <button class="btn btn-sm btn-primary">配置</button>
+                    <button class="btn btn-sm btn-primary" onclick="editModel(${m.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteModel(${m.id})">删除</button>
                 </td>
             </tr>
         `).join('');
@@ -306,7 +343,27 @@ async function loadModels() {
 }
 
 function showAddModelModal() {
-    utils.showAlert('模型管理功能开发中...', 'warning');
+    document.getElementById('add-model-modal').classList.add('active');
+}
+
+async function editModel(id) {
+    utils.showAlert('编辑功能暂未实现', 'warning');
+}
+
+async function deleteModel(id) {
+    if (!confirm('确定要删除此模型配置吗?')) return;
+    
+    try {
+        await utils.request(`/admin/models/${id}`, {
+            method: 'DELETE',
+            useAdmin: true
+        });
+        
+        utils.showAlert('模型配置已删除', 'success');
+        await loadModels();
+    } catch (error) {
+        console.error('Failed to delete model:', error);
+    }
 }
 
 // 请求日志

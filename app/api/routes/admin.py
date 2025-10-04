@@ -510,3 +510,212 @@ async def get_request_logs(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get logs: {str(e)}"
         )
+
+
+# ============================================================================
+# Model Configuration Management
+# ============================================================================
+
+@router.get(
+    "/models",
+    response_model=List[ModelConfigResponse],
+    dependencies=[Depends(verify_admin_key)]
+)
+async def list_model_configs(
+    db: AsyncSession = Depends(get_database)
+):
+    """List all model configurations."""
+    logger.info("Listing model configurations")
+    
+    try:
+        query = select(ModelConfig).order_by(ModelConfig.name)
+        result = await db.execute(query)
+        models = result.scalars().all()
+        
+        return models
+    
+    except Exception as e:
+        logger.error(f"Failed to list models: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list models: {str(e)}"
+        )
+
+
+@router.post(
+    "/models",
+    response_model=ModelConfigResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_admin_key)]
+)
+async def create_model_config(
+    model_data: ModelConfigCreate,
+    db: AsyncSession = Depends(get_database),
+    cache: RedisCache = Depends(get_cache)
+):
+    """Create a new model configuration."""
+    logger.info(f"Creating model config: {model_data.name}")
+    
+    try:
+        # Check if model already exists
+        query = select(ModelConfig).where(ModelConfig.name == model_data.name)
+        result = await db.execute(query)
+        existing = result.scalar_one_or_none()
+        
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Model {model_data.name} already exists"
+            )
+        
+        # Create model config
+        model = ModelConfig(**model_data.dict())
+        db.add(model)
+        await db.commit()
+        await db.refresh(model)
+        
+        # Invalidate cache
+        await cache.delete("models:*")
+        
+        logger.info(f"Model config created: {model.name} (ID: {model.id})")
+        return model
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to create model: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create model: {str(e)}"
+        )
+
+
+@router.get(
+    "/models/{model_id}",
+    response_model=ModelConfigResponse,
+    dependencies=[Depends(verify_admin_key)]
+)
+async def get_model_config(
+    model_id: int,
+    db: AsyncSession = Depends(get_database)
+):
+    """Get a specific model configuration."""
+    try:
+        query = select(ModelConfig).where(ModelConfig.id == model_id)
+        result = await db.execute(query)
+        model = result.scalar_one_or_none()
+        
+        if not model:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model {model_id} not found"
+            )
+        
+        return model
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        logger.error(f"Failed to get model: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get model: {str(e)}"
+        )
+
+
+@router.patch(
+    "/models/{model_id}",
+    response_model=ModelConfigResponse,
+    dependencies=[Depends(verify_admin_key)]
+)
+async def update_model_config(
+    model_id: int,
+    model_data: ModelConfigUpdate,
+    db: AsyncSession = Depends(get_database),
+    cache: RedisCache = Depends(get_cache)
+):
+    """Update a model configuration."""
+    logger.info(f"Updating model config: {model_id}")
+    
+    try:
+        query = select(ModelConfig).where(ModelConfig.id == model_id)
+        result = await db.execute(query)
+        model = result.scalar_one_or_none()
+        
+        if not model:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model {model_id} not found"
+            )
+        
+        # Update fields
+        update_data = model_data.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(model, field, value)
+        
+        await db.commit()
+        await db.refresh(model)
+        
+        # Invalidate cache
+        await cache.delete("models:*")
+        
+        logger.info(f"Model config updated: {model.name} (ID: {model.id})")
+        return model
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to update model: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update model: {str(e)}"
+        )
+
+
+@router.delete(
+    "/models/{model_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin_key)]
+)
+async def delete_model_config(
+    model_id: int,
+    db: AsyncSession = Depends(get_database),
+    cache: RedisCache = Depends(get_cache)
+):
+    """Delete a model configuration."""
+    logger.info(f"Deleting model config: {model_id}")
+    
+    try:
+        query = select(ModelConfig).where(ModelConfig.id == model_id)
+        result = await db.execute(query)
+        model = result.scalar_one_or_none()
+        
+        if not model:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model {model_id} not found"
+            )
+        
+        await db.delete(model)
+        await db.commit()
+        
+        # Invalidate cache
+        await cache.delete("models:*")
+        
+        logger.info(f"Model config deleted: {model.name} (ID: {model_id})")
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to delete model: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete model: {str(e)}"
+        )

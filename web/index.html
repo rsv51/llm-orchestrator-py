@@ -693,6 +693,62 @@
         </div>
     </div>
 
+    <!-- Add Model Modal -->
+    <div id="add-model-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">添加模型配置</h3>
+                <button class="close-btn" onclick="closeModal('add-model-modal')">×</button>
+            </div>
+            <form id="add-model-form">
+                <div class="form-group">
+                    <label class="form-label">模型名称 *</label>
+                    <input type="text" class="form-control" name="name" required placeholder="例如: gpt-4">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">显示名称</label>
+                    <input type="text" class="form-control" name="display_name" placeholder="例如: GPT-4">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">描述</label>
+                    <textarea class="form-control" name="description" rows="2" placeholder="模型描述"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">上下文长度 *</label>
+                    <input type="number" class="form-control" name="context_length" required value="4096">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">最大输出 Tokens</label>
+                    <input type="number" class="form-control" name="max_output_tokens" value="4096">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">输入价格 (每百万 tokens)</label>
+                    <input type="number" class="form-control" name="input_price_per_million" step="0.01" value="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">输出价格 (每百万 tokens)</label>
+                    <input type="number" class="form-control" name="output_price_per_million" step="0.01" value="0">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="supports_streaming" checked> 支持流式输出
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="supports_functions"> 支持函数调用
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="supports_vision"> 支持视觉输入
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-primary">添加</button>
+            </form>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>
