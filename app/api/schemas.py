@@ -295,22 +295,16 @@ class ErrorResponse(BaseModel):
 
 
 # ============================================================================
-# Model Configuration Schemas
+# Model Configuration Schemas (Simplified like llmio-master)
 # ============================================================================
 
 class ModelConfigBase(BaseModel):
-    """Model configuration base schema."""
+    """Model configuration base schema - simplified."""
     name: str
-    display_name: Optional[str] = None
-    description: Optional[str] = None
-    context_length: int = Field(ge=1)
-    max_output_tokens: Optional[int] = Field(default=None, ge=1)
-    input_price_per_million: float = Field(ge=0)
-    output_price_per_million: float = Field(ge=0)
-    supports_streaming: bool = True
-    supports_functions: bool = False
-    supports_vision: bool = False
-    metadata: Optional[Dict[str, Any]] = None
+    remark: Optional[str] = None
+    max_retry: int = Field(default=3, ge=0, le=10)
+    timeout: int = Field(default=30, ge=1, le=300)
+    enabled: bool = True
 
 
 class ModelConfigCreate(ModelConfigBase):
@@ -321,16 +315,10 @@ class ModelConfigCreate(ModelConfigBase):
 class ModelConfigUpdate(BaseModel):
     """Model configuration update schema."""
     name: Optional[str] = None
-    display_name: Optional[str] = None
-    description: Optional[str] = None
-    context_length: Optional[int] = Field(default=None, ge=1)
-    max_output_tokens: Optional[int] = Field(default=None, ge=1)
-    input_price_per_million: Optional[float] = Field(default=None, ge=0)
-    output_price_per_million: Optional[float] = Field(default=None, ge=0)
-    supports_streaming: Optional[bool] = None
-    supports_functions: Optional[bool] = None
-    supports_vision: Optional[bool] = None
-    metadata: Optional[Dict[str, Any]] = None
+    remark: Optional[str] = None
+    max_retry: Optional[int] = Field(default=None, ge=0, le=10)
+    timeout: Optional[int] = Field(default=None, ge=1, le=300)
+    enabled: Optional[bool] = None
 
 
 class ModelConfigResponse(ModelConfigBase):
@@ -338,6 +326,57 @@ class ModelConfigResponse(ModelConfigBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# Model-Provider Association Schemas (like llmio-master)
+# ============================================================================
+
+class ModelProviderBase(BaseModel):
+    """Model-Provider association base schema."""
+    model_id: int = Field(gt=0)
+    provider_id: int = Field(gt=0)
+    provider_model: str = Field(min_length=1)
+    weight: int = Field(default=1, ge=1, le=1000)
+    tool_call: bool = True
+    structured_output: bool = True
+    image: bool = False
+    enabled: bool = True
+
+
+class ModelProviderCreate(ModelProviderBase):
+    """Model-Provider association creation schema."""
+    pass
+
+
+class ModelProviderUpdate(BaseModel):
+    """Model-Provider association update schema."""
+    provider_model: Optional[str] = None
+    weight: Optional[int] = Field(default=None, ge=1, le=1000)
+    tool_call: Optional[bool] = None
+    structured_output: Optional[bool] = None
+    image: Optional[bool] = None
+    enabled: Optional[bool] = None
+
+
+class ModelProviderResponse(ModelProviderBase):
+    """Model-Provider association response schema."""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class ModelProviderWithDetails(ModelProviderResponse):
+    """Model-Provider association with provider details."""
+    provider_name: Optional[str] = None
+    provider_type: Optional[str] = None
+    model_name: Optional[str] = None
     
     class Config:
         from_attributes = True

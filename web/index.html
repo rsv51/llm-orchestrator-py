@@ -458,6 +458,7 @@
             <button class="nav-tab active" onclick="switchTab('dashboard')">仪表盘</button>
             <button class="nav-tab" onclick="switchTab('providers')">提供商管理</button>
             <button class="nav-tab" onclick="switchTab('models')">模型配置</button>
+            <button class="nav-tab" onclick="window.location.href='model-providers.html'">模型-提供商关联</button>
             <button class="nav-tab" onclick="switchTab('logs')">请求日志</button>
             <button class="nav-tab" onclick="switchTab('settings')">系统设置</button>
         </div>
@@ -565,10 +566,10 @@
                         <thead>
                             <tr>
                                 <th>模型名称</th>
-                                <th>显示名称</th>
-                                <th>上下文长度</th>
-                                <th>最大 Tokens</th>
-                                <th>支持功能</th>
+                                <th>备注</th>
+                                <th>最大重试</th>
+                                <th>超时(秒)</th>
+                                <th>状态</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -704,44 +705,25 @@
                 <div class="form-group">
                     <label class="form-label">模型名称 *</label>
                     <input type="text" class="form-control" name="name" required placeholder="例如: gpt-4">
+                    <small style="color: var(--text-secondary); font-size: 12px;">
+                        这是用户请求时使用的模型名称
+                    </small>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">显示名称</label>
-                    <input type="text" class="form-control" name="display_name" placeholder="例如: GPT-4">
+                    <label class="form-label">备注</label>
+                    <textarea class="form-control" name="remark" rows="2" placeholder="模型描述或备注信息"></textarea>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">描述</label>
-                    <textarea class="form-control" name="description" rows="2" placeholder="模型描述"></textarea>
+                    <label class="form-label">最大重试次数</label>
+                    <input type="number" class="form-control" name="max_retry" value="3" min="0" max="10">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">上下文长度 *</label>
-                    <input type="number" class="form-control" name="context_length" required value="4096">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">最大输出 Tokens</label>
-                    <input type="number" class="form-control" name="max_output_tokens" value="4096">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">输入价格 (每百万 tokens)</label>
-                    <input type="number" class="form-control" name="input_price_per_million" step="0.01" value="0">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">输出价格 (每百万 tokens)</label>
-                    <input type="number" class="form-control" name="output_price_per_million" step="0.01" value="0">
+                    <label class="form-label">超时时间 (秒)</label>
+                    <input type="number" class="form-control" name="timeout" value="30" min="1" max="300">
                 </div>
                 <div class="form-group">
                     <label>
-                        <input type="checkbox" name="supports_streaming" checked> 支持流式输出
-                    </label>
-                </div>
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" name="supports_functions"> 支持函数调用
-                    </label>
-                </div>
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" name="supports_vision"> 支持视觉输入
+                        <input type="checkbox" name="enabled" checked> 启用
                     </label>
                 </div>
                 <button type="submit" class="btn btn-primary">添加</button>

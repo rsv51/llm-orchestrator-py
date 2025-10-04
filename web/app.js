@@ -387,15 +387,10 @@ document.getElementById('add-model-form').addEventListener('submit', async (e) =
     const formData = new FormData(e.target);
     const data = {
         name: formData.get('name'),
-        display_name: formData.get('display_name') || null,
-        description: formData.get('description') || null,
-        context_length: parseInt(formData.get('context_length')),
-        max_output_tokens: parseInt(formData.get('max_output_tokens')) || null,
-        input_price_per_million: parseFloat(formData.get('input_price_per_million')),
-        output_price_per_million: parseFloat(formData.get('output_price_per_million')),
-        supports_streaming: formData.get('supports_streaming') === 'on',
-        supports_functions: formData.get('supports_functions') === 'on',
-        supports_vision: formData.get('supports_vision') === 'on'
+        remark: formData.get('remark') || null,
+        max_retry: parseInt(formData.get('max_retry')) || 3,
+        timeout: parseInt(formData.get('timeout')) || 30,
+        enabled: formData.get('enabled') === 'on'
     };
     
     try {
@@ -429,13 +424,13 @@ async function loadModels() {
         tbody.innerHTML = models.map(m => `
             <tr>
                 <td>${m.name}</td>
-                <td>${m.display_name || m.name}</td>
-                <td>${utils.formatNumber(m.context_length)}</td>
-                <td>${m.max_output_tokens ? utils.formatNumber(m.max_output_tokens) : 'N/A'}</td>
+                <td>${m.remark || '-'}</td>
+                <td>${m.max_retry}</td>
+                <td>${m.timeout}</td>
                 <td>
-                    ${m.supports_streaming ? '<span class="badge badge-success">流式</span>' : ''}
-                    ${m.supports_functions ? '<span class="badge badge-success">函数</span>' : ''}
-                    ${m.supports_vision ? '<span class="badge badge-success">视觉</span>' : ''}
+                    <span class="badge badge-${m.enabled ? 'success' : 'danger'}">
+                        ${m.enabled ? '启用' : '禁用'}
+                    </span>
                 </td>
                 <td>
                     <button class="btn btn-sm btn-primary" onclick="editModel(${m.id})">编辑</button>

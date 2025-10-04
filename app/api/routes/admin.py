@@ -369,16 +369,13 @@ async def import_provider_models(
                 skipped_count += 1
                 continue
             
-            # Create model config with defaults
+            # Create model config with simplified defaults
             model_config = ModelConfig(
                 name=model_name,
-                display_name=model_name,
-                context_length=8192,  # Default value
-                supports_streaming=True,
-                supports_functions=False,
-                supports_vision=False,
-                input_price_per_million=0.0,
-                output_price_per_million=0.0
+                remark=f"Imported from {provider.name}",
+                max_retry=3,
+                timeout=30,
+                enabled=True
             )
             
             db.add(model_config)
@@ -542,7 +539,7 @@ async def get_system_stats(
                 Provider.id,
                 Provider.name,
                 func.count(RequestLog.id).label("total"),
-                func.sum(func.case((RequestLog.status_code == 200, 1))).label("success"),
+                func.sum(func.case((RequestLog.status_code == 200, 1), else_=0)).label("success"),
                 func.avg(RequestLog.latency_ms).label("avg_latency"),
                 func.sum(func.coalesce(RequestLog.total_tokens, 0)).label("total_tokens"),
                 func.sum(func.coalesce(RequestLog.cost, 0)).label("total_cost")
@@ -880,4 +877,351 @@ async def delete_model_config(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete model: {str(e)}"
+
+
+# ============================================================================
+# Model-Provider Association Management
+# ============================================================================
+
+@router.get(
+    "/model-providers",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def list_model_providers(
+    model_id: Optional[int] = Query(None),
+    provider_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_database)
+):
+    """List model-provider associations with optional filters."""
+    logger.info(f"Listing model-provider associations: model_id={model_id}, provider_id={provider_id}")
+    
+    try:
+        from app.models.provider import ModelProvider
+        
+        # Build query
+        query = (
+            select(ModelProvider, ModelConfig, Provider)
+            .join(ModelConfig, ModelProvider.model_id == ModelConfig.id)
+            .join(Provider, ModelProvider.provider_id == Provider.id)
+        )
+        
+        if model_id:
+            query = query.where(ModelProvider.model_id == model_id)
+        if provider_id:
+            query = query.where(ModelProvider.provider_id == provider_id)
+        
+        query = query.order_by(ModelConfig.name, Provider.name)
+        
+        result = await db.execute(query)
+        rows = result.all()
+        
+        associations = []
+        for assoc, model, provider in rows:
+            associations.append({
+                "id": assoc.id,
+                "model_id": assoc.model_id,
+                "model_name": model.name,
+                "provider_id": assoc.provider_id,
+                "provider_name": provider.name,
+                "provider_type": provider.type,
+                "provider_model": assoc.provider_model,
+                "weight": assoc.weight,
+                "tool_call": assoc.tool_call,
+                "structured_output": assoc.structured_output,
+                "image": assoc.image,
+                "enabled": assoc.enabled,
+                "created_at": assoc.created_at,
+                "updated_at": assoc.updated_at
+            })
+        
+        return associations
+    
+    except Exception as e:
+        logger.error(f"Failed to list model-providers: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list model-providers: {str(e)}"
+        )
+
+
+@router.post(
+    "/model-providers",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_admin_key)]
+)
+async def create_model_provider(
+    association_data: dict,
+    db: AsyncSession = Depends(get_database),
+    cache: RedisCache = Depends(get_cache)
+):
+    """Create a new model-provider association."""
+    logger.info(f"Creating model-provider association")
+    
+    try:
+        from app.models.provider import ModelProvider
+        
+        # Validate model exists
+        query = select(ModelConfig).where(ModelConfig.id == association_data["model_id"])
+        result = await db.execute(query)
+        model = result.scalar_one_or_none()
+        if not model:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model {association_data['model_id']} not found"
+            )
+        
+        # Validate provider exists
+        query = select(Provider).where(Provider.id == association_data["provider_id"])
+        result = await db.execute(query)
+        provider = result.scalar_one_or_none()
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Provider {association_data['provider_id']} not found"
+            )
+        
+        # Check for duplicate
+        query = select(ModelProvider).where(
+            and_(
+                ModelProvider.model_id == association_data["model_id"],
+                ModelProvider.provider_id == association_data["provider_id"],
+                ModelProvider.provider_model == association_data["provider_model"]
+            )
+        )
+        result = await db.execute(query)
+        existing = result.scalar_one_or_none()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This model-provider association already exists"
+            )
+        
+        # Create association
+        association = ModelProvider(
+            model_id=association_data["model_id"],
+            provider_id=association_data["provider_id"],
+            provider_model=association_data["provider_model"],
+            weight=association_data.get("weight", 1),
+            tool_call=association_data.get("tool_call", True),
+            structured_output=association_data.get("structured_output", True),
+            image=association_data.get("image", False),
+            enabled=association_data.get("enabled", True)
+        )
+        
+        db.add(association)
+        await db.commit()
+        await db.refresh(association)
+        
+        # Invalidate cache
+        await cache.delete("model-providers:*")
+        
+        logger.info(f"Model-provider association created: ID {association.id}")
+        
+        return {
+            "id": association.id,
+            "model_id": association.model_id,
+            "provider_id": association.provider_id,
+            "provider_model": association.provider_model,
+            "weight": association.weight,
+            "tool_call": association.tool_call,
+            "structured_output": association.structured_output,
+            "image": association.image,
+            "enabled": association.enabled,
+            "created_at": association.created_at,
+            "updated_at": association.updated_at
+        }
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to create model-provider: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create model-provider: {str(e)}"
+        )
+
+
+@router.patch(
+    "/model-providers/{association_id}",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def update_model_provider(
+    association_id: int,
+    association_data: dict,
+    db: AsyncSession = Depends(get_database),
+    cache: RedisCache = Depends(get_cache)
+):
+    """Update a model-provider association."""
+    logger.info(f"Updating model-provider association: {association_id}")
+    
+    try:
+        from app.models.provider import ModelProvider
+        
+        query = select(ModelProvider).where(ModelProvider.id == association_id)
+        result = await db.execute(query)
+        association = result.scalar_one_or_none()
+        
+        if not association:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model-provider association {association_id} not found"
+            )
+        
+        # Update fields
+        for field, value in association_data.items():
+            if hasattr(association, field):
+                setattr(association, field, value)
+        
+        await db.commit()
+        await db.refresh(association)
+        
+        # Invalidate cache
+        await cache.delete("model-providers:*")
+        
+        logger.info(f"Model-provider association updated: ID {association.id}")
+        
+        return {
+            "id": association.id,
+            "model_id": association.model_id,
+            "provider_id": association.provider_id,
+            "provider_model": association.provider_model,
+            "weight": association.weight,
+            "tool_call": association.tool_call,
+            "structured_output": association.structured_output,
+            "image": association.image,
+            "enabled": association.enabled,
+            "created_at": association.created_at,
+            "updated_at": association.updated_at
+        }
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to update model-provider: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update model-provider: {str(e)}"
+        )
+
+
+@router.delete(
+    "/model-providers/{association_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin_key)]
+)
+async def delete_model_provider(
+    association_id: int,
+    db: AsyncSession = Depends(get_database),
+    cache: RedisCache = Depends(get_cache)
+):
+    """Delete a model-provider association."""
+    logger.info(f"Deleting model-provider association: {association_id}")
+    
+    try:
+        from app.models.provider import ModelProvider
+        
+        query = select(ModelProvider).where(ModelProvider.id == association_id)
+        result = await db.execute(query)
+        association = result.scalar_one_or_none()
+        
+        if not association:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model-provider association {association_id} not found"
+            )
+        
+        await db.delete(association)
+        await db.commit()
+        
+        # Invalidate cache
+        await cache.delete("model-providers:*")
+        
+        logger.info(f"Model-provider association deleted: ID {association_id}")
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to delete model-provider: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete model-provider: {str(e)}"
+        )
+
+
+@router.get(
+    "/model-providers/{association_id}/status",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def get_model_provider_status(
+    association_id: int,
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_database)
+):
+    """Get recent status history for a model-provider association (like llmio-master)."""
+    logger.info(f"Getting status for model-provider {association_id}")
+    
+    try:
+        from app.models.provider import ModelProvider
+        
+        # Get association details
+        query = (
+            select(ModelProvider, ModelConfig, Provider)
+            .join(ModelConfig, ModelProvider.model_id == ModelConfig.id)
+            .join(Provider, ModelProvider.provider_id == Provider.id)
+            .where(ModelProvider.id == association_id)
+        )
+        result = await db.execute(query)
+        row = result.first()
+        
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model-provider association {association_id} not found"
+            )
+        
+        assoc, model, provider = row
+        
+        # Get recent request logs
+        query = (
+            select(RequestLog.status_code, RequestLog.created_at)
+            .where(
+                and_(
+                    RequestLog.provider_id == assoc.provider_id,
+                    RequestLog.model == model.name
+                )
+            )
+            .order_by(RequestLog.created_at.desc())
+            .limit(limit)
+        )
+        
+        result = await db.execute(query)
+        logs = result.all()
+        
+        # Build status array (true = success, false = failure)
+        status_array = [log.status_code == 200 for log in reversed(logs)]
+        
+        return {
+            "association_id": association_id,
+            "model_name": model.name,
+            "provider_name": provider.name,
+            "provider_model": assoc.provider_model,
+            "status_history": status_array,
+            "total_records": len(status_array)
+        }
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        logger.error(f"Failed to get status: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get status: {str(e)}"
+        )
         )

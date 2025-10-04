@@ -41,13 +41,13 @@ class Provider(Base):
 
 
 class ModelConfig(Base):
-    """Model configuration model."""
+    """Model configuration model - simplified like llmio-master."""
     
     __tablename__ = "models"
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False, index=True)
-    remark = Column(String(255))
+    remark = Column(String(255))  # Model description
     max_retry = Column(Integer, default=3)  # Maximum retry count
     timeout = Column(Integer, default=30)  # Timeout in seconds
     enabled = Column(Boolean, default=True)
