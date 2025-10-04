@@ -261,48 +261,9 @@ class RequestRouter:
                 timeout=request.timeout or provider.timeout
             )
             
-            # Stream response and track last chunk for usage extraction
-            last_chunk: Optional[str] = None
-            
+            # Stream response - logging is handled in chat.py's finally block
             async for chunk in provider_instance.chat_completion_stream(request):
-                # Track the last valid chunk (not [DONE])
-                if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
-                    last_chunk = chunk
-                
                 yield chunk
-            
-            # Extract usage from the LAST chunk after streaming completes
-            if last_chunk:
-                try:
-                    data_str = last_chunk[6:].strip()  # Remove "data: " prefix
-                    data = json.loads(data_str)
-                    
-                    # Validate usage exists and has non-zero total_tokens
-                    if "usage" in data:
-                        usage = data["usage"]
-                        if usage.get("total_tokens", 0) > 0:
-                            usage_info = usage
-                            logger.debug(
-                                "Extracted usage from last chunk",
-                                extra={
-                                    "prompt_tokens": usage.get("prompt_tokens"),
-                                    "completion_tokens": usage.get("completion_tokens"),
-                                    "total_tokens": usage.get("total_tokens")
-                                }
-                            )
-                except (json.JSONDecodeError, KeyError) as e:
-                    logger.warning(f"Failed to extract usage from last chunk: {str(e)}")
-            
-            # Log successful streaming request with usage info
-            latency_ms = int((time.time() - start_time) * 1000)
-            await self._log_streaming_request(
-                provider_id=provider.id,
-                request=request,
-                usage_info=usage_info,
-                latency_ms=latency_ms,
-                api_key=api_key,
-                client_ip=client_ip
-            )
         
         except Exception as e:
             logger.error(

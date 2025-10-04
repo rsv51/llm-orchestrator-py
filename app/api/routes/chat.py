@@ -153,13 +153,17 @@ async def create_chat_completion(
                                 try:
                                     data_str = stream_state["last_chunk"][6:].strip()
                                     data = json.loads(data_str)
-                                    if "usage" in data and data["usage"].get("total_tokens", 0) > 0:
+                                    if "usage" in data and data["usage"] and data["usage"].get("total_tokens", 0) > 0:
                                         usage_info = data["usage"]
-                                        logger.debug(
-                                            f"Extracted usage: {usage_info.get('total_tokens')} tokens"
+                                        logger.info(
+                                            f"Extracted usage: prompt={usage_info.get('prompt_tokens')}, "
+                                            f"completion={usage_info.get('completion_tokens')}, "
+                                            f"total={usage_info.get('total_tokens')}"
                                         )
-                                except:
-                                    pass
+                                    else:
+                                        logger.warning(f"Last chunk has no valid usage info: {data_str[:200]}")
+                                except Exception as e:
+                                    logger.error(f"Failed to extract usage: {str(e)}, chunk: {stream_state['last_chunk'][:200]}")
                             
                             # Create log entry
                             from app.models.request_log import RequestLog
