@@ -215,12 +215,11 @@ class ProviderUpdate(BaseModel):
 
 class ProviderResponse(ProviderBase):
     """Provider response schema."""
+    model_config = {"from_attributes": True}
+    
     id: int
     created_at: datetime
     updated_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 # ============================================================================
@@ -323,12 +322,11 @@ class ModelConfigUpdate(BaseModel):
 
 class ModelConfigResponse(ModelConfigBase):
     """Model configuration response schema."""
+    model_config = {"from_attributes": True}
+    
     id: int
     created_at: datetime
     updated_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 # ============================================================================
@@ -366,24 +364,20 @@ class ModelProviderUpdate(BaseModel):
 
 class ModelProviderResponse(ModelProviderBase):
     """Model-Provider association response schema."""
+    model_config = {"from_attributes": True}
+    
     id: int
     created_at: datetime
     updated_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 class ModelProviderWithDetails(ModelProviderResponse):
     """Model-Provider association with provider details."""
-    model_config = {"protected_namespaces": ()}
+    model_config = {"protected_namespaces": (), "from_attributes": True}
     
     provider_name: Optional[str] = None
     provider_type: Optional[str] = None
     model_name: Optional[str] = None
-    
-    class Config:
-        from_attributes = True
 
 
 # ============================================================================
@@ -392,6 +386,8 @@ class ModelProviderWithDetails(ModelProviderResponse):
 
 class RequestLogResponse(BaseModel):
     """Request log response schema."""
+    model_config = {"from_attributes": True}
+    
     id: int
     provider_id: int
     provider_name: str
@@ -408,9 +404,6 @@ class RequestLogResponse(BaseModel):
     user_id: Optional[str] = None
     ip_address: Optional[str] = None
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 class RequestLogListResponse(BaseModel):
