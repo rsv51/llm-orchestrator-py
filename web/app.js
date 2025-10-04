@@ -173,7 +173,7 @@ async function loadProviders() {
         const tbody = document.getElementById('providers-tbody');
         
         if (providers.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="empty-state-text">暂无提供商</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="empty-state-text">暂无提供商</td></tr>';
             return;
         }
         
@@ -191,6 +191,9 @@ async function loadProviders() {
                 </td>
                 <td>${utils.formatDate(p.created_at)}</td>
                 <td>
+                    <button class="btn btn-sm btn-success" onclick="getProviderModels(${p.id}, '${p.name}')">
+                        📋 获取模型
+                    </button>
                     <button class="btn btn-sm btn-primary" onclick="toggleProvider(${p.id}, ${!p.enabled})">
                         ${p.enabled ? '禁用' : '启用'}
                     </button>
@@ -207,7 +210,7 @@ async function loadProviders() {
 async function toggleProvider(id, enabled) {
     try {
         await utils.request(`/admin/providers/${id}`, {
-            method: 'PUT',
+            method: 'PATCH',  // 修复: 使用 PATCH 而不是 PUT
             useAdmin: true,
             body: JSON.stringify({ enabled })
         });
@@ -216,6 +219,110 @@ async function toggleProvider(id, enabled) {
         await loadProviders();
     } catch (error) {
         console.error('Failed to toggle provider:', error);
+    }
+}
+
+// 获取提供商模型列表
+async function getProviderModels(providerId, providerName) {
+    try {
+        const data = await utils.request(`/admin/providers/${providerId}/models`, { useAdmin: true });
+        
+        // 显示模型列表模态框
+        showProviderModelsModal(data.models, providerId, providerName);
+    } catch (error) {
+        console.error('Failed to get provider models:', error);
+        utils.showAlert('获取模型列表失败: ' + error.message, 'danger');
+    }
+}
+
+// 显示提供商模型列表模态框
+function showProviderModelsModal(models, providerId, providerName) {
+    const modalHtml = `
+        <div id="provider-models-modal" class="modal active">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">${providerName} - 可用模型</h3>
+                    <button class="close-btn" onclick="closeModal('provider-models-modal')">×</button>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <button class="btn btn-primary" onclick="importAllModels(${providerId}, ${JSON.stringify(models).replace(/"/g, '&quot;')})">
+                        📥 一键导入全部模型
+                    </button>
+                    <p style="margin-top: 10px; color: var(--text-secondary);">共 ${models.length} 个模型</p>
+                </div>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    ${models.map(model => `
+                        <div style="padding: 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong>${model}</strong>
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-primary" onclick="copyModelName('${model}')">
+                                    📋 复制
+                                </button>
+                                <button class="btn btn-sm btn-success" onclick="importSingleModel(${providerId}, '${model}')">
+                                    ➕ 导入
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // 移除旧模态框
+    const oldModal = document.getElementById('provider-models-modal');
+    if (oldModal) oldModal.remove();
+    
+    // 添加新模态框
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+// 复制模型名称
+function copyModelName(modelName) {
+    navigator.clipboard.writeText(modelName).then(() => {
+        utils.showAlert(`已复制: ${modelName}`, 'success');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        utils.showAlert('复制失败', 'danger');
+    });
+}
+
+// 导入单个模型
+async function importSingleModel(providerId, modelName) {
+    try {
+        const result = await utils.request(`/admin/providers/${providerId}/models/import`, {
+            method: 'POST',
+            useAdmin: true,
+            body: JSON.stringify({ model_names: [modelName] })
+        });
+        
+        utils.showAlert(result.message, 'success');
+        await loadModels();  // 刷新模型列表
+    } catch (error) {
+        console.error('Failed to import model:', error);
+        utils.showAlert('导入失败: ' + error.message, 'danger');
+    }
+}
+
+// 一键导入全部模型
+async function importAllModels(providerId, models) {
+    if (!confirm(`确定要导入全部 ${models.length} 个模型吗?`)) return;
+    
+    try {
+        const result = await utils.request(`/admin/providers/${providerId}/models/import`, {
+            method: 'POST',
+            useAdmin: true,
+            body: JSON.stringify({ model_names: null })  // null = 导入全部
+        });
+        
+        utils.showAlert(result.message, 'success');
+        closeModal('provider-models-modal');
+        await loadModels();  // 刷新模型列表
+    } catch (error) {
+        console.error('Failed to import all models:', error);
+        utils.showAlert('批量导入失败: ' + error.message, 'danger');
     }
 }
 

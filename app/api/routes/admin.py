@@ -267,6 +267,150 @@ async def delete_provider(
 
 
 # ============================================================================
+# Provider Models Management
+# ============================================================================
+
+@router.get(
+    "/providers/{provider_id}/models",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def get_provider_models(
+    provider_id: int,
+    db: AsyncSession = Depends(get_database)
+):
+    """Get available models from a specific provider."""
+    logger.info(f"Fetching models for provider {provider_id}")
+    
+    try:
+        # Get provider
+        query = select(Provider).where(Provider.id == provider_id)
+        result = await db.execute(query)
+        provider = result.scalar_one_or_none()
+        
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Provider {provider_id} not found"
+            )
+        
+        # Get provider instance
+        from app.services.router import get_provider_instance
+        provider_instance = get_provider_instance(provider)
+        
+        # Get models
+        models = await provider_instance.get_models()
+        
+        return {
+            "provider_id": provider_id,
+            "provider_name": provider.name,
+            "provider_type": provider.type,
+            "models": models
+        }
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        logger.error(f"Failed to get provider models: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get provider models: {str(e)}"
+        )
+
+
+@router.post(
+    "/providers/{provider_id}/models/import",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def import_provider_models(
+    provider_id: int,
+    model_names: Optional[List[str]] = None,
+    db: AsyncSession = Depends(get_database),
+    cache: RedisCache = Depends(get_cache)
+):
+    """Import models from provider to model configurations."""
+    logger.info(f"Importing models from provider {provider_id}")
+    
+    try:
+        # Get provider
+        query = select(Provider).where(Provider.id == provider_id)
+        result = await db.execute(query)
+        provider = result.scalar_one_or_none()
+        
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Provider {provider_id} not found"
+            )
+        
+        # Get provider instance
+        from app.services.router import get_provider_instance
+        provider_instance = get_provider_instance(provider)
+        
+        # Get all models
+        all_models = await provider_instance.get_models()
+        
+        # Filter models if specific names provided
+        if model_names:
+            models_to_import = [m for m in all_models if m in model_names]
+        else:
+            models_to_import = all_models
+        
+        imported_count = 0
+        skipped_count = 0
+        
+        for model_name in models_to_import:
+            # Check if model already exists
+            query = select(ModelConfig).where(ModelConfig.name == model_name)
+            result = await db.execute(query)
+            existing = result.scalar_one_or_none()
+            
+            if existing:
+                skipped_count += 1
+                continue
+            
+            # Create model config with defaults
+            model_config = ModelConfig(
+                name=model_name,
+                display_name=model_name,
+                context_length=8192,  # Default value
+                supports_streaming=True,
+                supports_functions=False,
+                supports_vision=False,
+                input_price_per_million=0.0,
+                output_price_per_million=0.0
+            )
+            
+            db.add(model_config)
+            imported_count += 1
+        
+        await db.commit()
+        
+        # Invalidate cache
+        await cache.delete("models:*")
+        
+        logger.info(f"Imported {imported_count} models from provider {provider_id}")
+        
+        return {
+            "message": f"Successfully imported {imported_count} models",
+            "imported": imported_count,
+            "skipped": skipped_count,
+            "total": len(models_to_import)
+        }
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to import models: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import models: {str(e)}"
+        )
+
+
+# ============================================================================
 # System Health
 # ============================================================================
 
