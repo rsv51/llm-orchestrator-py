@@ -105,6 +105,14 @@ class ChatCompletionRequest(BaseModel):
         if v is not None and (v < 0 or v > 2):
             raise ValueError('temperature must be between 0 and 2')
         return v
+    
+    @field_validator('*', mode='before')
+    @classmethod
+    def clean_undefined_strings(cls, v):
+        """Convert '[undefined]' strings to None for all fields."""
+        if isinstance(v, str) and v == '[undefined]':
+            return None
+        return v
 
 
 class ChatCompletionChoice(BaseModel):

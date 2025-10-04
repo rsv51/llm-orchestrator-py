@@ -327,11 +327,14 @@ function showProviderModelsModal(models, providerId, providerName) {
                     <h3 class="modal-title">${providerName} - 可用模型</h3>
                     <button class="close-btn" onclick="closeModal('provider-models-modal')">×</button>
                 </div>
-                <div style="margin-bottom: 20px;">
+                <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
                     <button class="btn btn-primary" onclick="importAllModels(${providerId}, ${JSON.stringify(models).replace(/"/g, '&quot;')})">
                         📥 一键导入全部模型
                     </button>
-                    <p style="margin-top: 10px; color: var(--text-secondary);">共 ${models.length} 个模型</p>
+                    <button class="btn btn-success" onclick="copyAllModels(${JSON.stringify(models).replace(/"/g, '&quot;')})">
+                        📋 一键复制全部模型
+                    </button>
+                    <p style="margin: 0; color: var(--text-secondary);">共 ${models.length} 个模型</p>
                 </div>
                 <div style="max-height: 400px; overflow-y: auto;">
                     ${models.map(model => `
@@ -368,6 +371,24 @@ function copyModelName(modelName) {
         utils.showAlert(`已复制: ${modelName}`, 'success');
     }).catch(err => {
         console.error('Failed to copy:', err);
+        utils.showAlert('复制失败', 'danger');
+    });
+}
+
+// 一键复制全部模型名称
+function copyAllModels(models) {
+    if (!models || models.length === 0) {
+        utils.showAlert('没有可复制的模型', 'warning');
+        return;
+    }
+    
+    // 将所有模型名称用换行符连接
+    const allModelsText = models.join('\n');
+    
+    navigator.clipboard.writeText(allModelsText).then(() => {
+        utils.showAlert(`已复制 ${models.length} 个模型名称`, 'success');
+    }).catch(err => {
+        console.error('Failed to copy all models:', err);
         utils.showAlert('复制失败', 'danger');
     });
 }

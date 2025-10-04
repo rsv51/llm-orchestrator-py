@@ -710,6 +710,40 @@ async def get_request_logs(
         )
 
 
+@router.delete(
+    "/logs/cleanup",
+    dependencies=[Depends(verify_admin_key)]
+)
+async def cleanup_old_logs(
+    retention_days: int = Query(30, ge=1, le=365, description="Days to retain logs"),
+    db: AsyncSession = Depends(get_database)
+):
+    """Manually trigger cleanup of old request logs."""
+    logger.info(f"Manual log cleanup requested: retention={retention_days} days")
+    
+    try:
+        from app.services.log_cleanup import LogCleanupService
+        
+        cleanup_service = LogCleanupService(retention_days=retention_days)
+        result = await cleanup_service.cleanup_old_logs(db)
+        
+        logger.info(f"Manual cleanup completed: {result}")
+        
+        return {
+            "message": f"Successfully cleaned up {result['deleted_count']} old logs",
+            "deleted_count": result['deleted_count'],
+            "cutoff_date": result['cutoff_date'],
+            "retention_days": result['retention_days']
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to cleanup logs: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cleanup logs: {str(e)}"
+        )
+
+
 # ============================================================================
 # Model Configuration Management
 # ============================================================================

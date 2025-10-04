@@ -42,13 +42,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         logger.error(f"Failed to initialize database: {str(e)}", exc_info=True)
         raise
     
-    # Start health check service as background task
-    health_check_task = None
+    # Start background services
+    import asyncio
+    background_tasks = []
+    
+    # Start health check service
     if settings.health_check_enabled:
         from app.services.health_check import start_health_check_service
-        import asyncio
         health_check_task = asyncio.create_task(start_health_check_service())
+        background_tasks.append(("health_check", health_check_task))
         logger.info("Health check service started")
+    
+    # Start log cleanup service
+    from app.services.log_cleanup import start_log_cleanup_service
+    log_cleanup_task = asyncio.create_task(
+        start_log_cleanup_service(
+            retention_days=getattr(settings, 'log_retention_days', 30),
+            cleanup_interval_hours=getattr(settings, 'log_cleanup_interval_hours', 24)
+        )
+    )
+    background_tasks.append(("log_cleanup", log_cleanup_task))
+    logger.info("Log cleanup service started")
     
     logger.info("Application startup complete")
     
@@ -57,13 +71,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Shutdown
     logger.info("Shutting down LLM Orchestrator API")
     
-    # Cancel health check task
-    if settings.health_check_enabled and health_check_task is not None:
-        health_check_task.cancel()
+    # Cancel all background tasks
+    for task_name, task in background_tasks:
+        task.cancel()
         try:
-            await health_check_task
+            await task
         except asyncio.CancelledError:
-            logger.info("Health check service stopped")
+            logger.info(f"{task_name} service stopped")
 
 
 # ============================================================================
