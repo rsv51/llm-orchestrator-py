@@ -501,12 +501,14 @@ async function loadLogs() {
     }
 }
 
-// Excel 导入导出功能
-let currentImportType = 'providers';
+// ==================== Excel 统一导入导出功能 ====================
 
-async function exportProviders() {
+/**
+ * 导出所有配置(三工作表)
+ */
+async function exportAllConfig() {
     try {
-        const response = await fetch('/admin/excel/export/providers', {
+        const response = await fetch('/api/admin/export/config', {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${config.adminKey}`
@@ -517,27 +519,31 @@ async function exportProviders() {
             throw new Error(`导出失败: ${response.status}`);
         }
         
-        // 创建 Blob 并下载
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `providers_${new Date().toISOString().split('T')[0]}.xlsx`;
+        a.download = `llm_orchestrator_config_${new Date().toISOString().split('T')[0]}.xlsx`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
         
-        utils.showAlert('提供商列表下载成功', 'success');
+        utils.showAlert('配置导出成功,包含3个工作表', 'success');
     } catch (error) {
-        console.error('Export failed:', error);
+        console.error('Export config failed:', error);
         utils.showAlert('导出失败: ' + error.message, 'danger');
     }
 }
 
-async function exportModels() {
+/**
+ * 下载配置模板
+ * @param {boolean} withSample - 是否包含示例数据
+ */
+async function downloadConfigTemplate(withSample = false) {
     try {
-        const response = await fetch('/admin/excel/export/models', {
+        const url = `/api/admin/export/template?with_sample=${withSample}`;
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${config.adminKey}`
@@ -545,53 +551,39 @@ async function exportModels() {
         });
         
         if (!response.ok) {
-            throw new Error(`导出失败: ${response.status}`);
+            throw new Error(`下载模板失败: ${response.status}`);
         }
         
-        // 创建 Blob 并下载
         const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
+        const downloadUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `models_${new Date().toISOString().split('T')[0]}.xlsx`;
+        a.href = downloadUrl;
+        a.download = withSample
+            ? `llm_orchestrator_template_with_sample.xlsx`
+            : `llm_orchestrator_template.xlsx`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
+        window.URL.revokeObjectURL(downloadUrl);
         
-        utils.showAlert('模型列表下载成功', 'success');
+        utils.showAlert(
+            withSample ? '模板下载成功(含示例数据)' : '空白模板下载成功',
+            'success'
+        );
     } catch (error) {
-        console.error('Export failed:', error);
-        utils.showAlert('导出失败: ' + error.message, 'danger');
+        console.error('Download template failed:', error);
+        utils.showAlert('下载模板失败: ' + error.message, 'danger');
     }
 }
 
-function showImportModal(type) {
-    currentImportType = type;
-    const modal = document.getElementById('import-modal');
-    const title = document.getElementById('import-modal-title');
-    
-    if (type === 'providers') {
-        title.textContent = '导入提供商';
-    } else if (type === 'models') {
-        title.textContent = '导入模型配置';
-    }
-    
-    // 重置表单
-    document.getElementById('import-form').reset();
-    document.getElementById('import-result').style.display = 'none';
-    
+/**
+ * 显示统一导入模态框
+ */
+function showUnifiedImportModal() {
+    const modal = document.getElementById('unified-import-modal');
+    document.getElementById('unified-import-form').reset();
+    document.getElementById('unified-import-result').style.display = 'none';
     modal.classList.add('active');
-}
-
-async function downloadTemplate() {
-    // 使用相对路径自动适配域名
-    const url = currentImportType === 'providers'
-        ? '/admin/excel/template/providers'
-        : '/admin/excel/template/models';
-    
-    window.open(url, '_blank');
-    utils.showAlert('正在下载模板...', 'success');
 }
 
 // 设置
@@ -672,76 +664,142 @@ function logout() {
     }
 }
 
-// 处理导入表单
-document.getElementById('import-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const fileInput = document.getElementById('import-file');
-    const skipDuplicates = document.getElementById('skip-duplicates').checked;
-    const resultDiv = document.getElementById('import-result');
-    
-    if (!fileInput.files.length) {
-        utils.showAlert('请选择文件', 'danger');
-        return;
-    }
-    
-    const file = fileInput.files[0];
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    try {
-        const endpoint = currentImportType === 'providers'
-            ? `/admin/excel/import/providers?skip_duplicates=${skipDuplicates}`
-            : `/admin/excel/import/models?skip_duplicates=${skipDuplicates}`;
-        
-        // 使用相对路径,不需要 config.apiBaseUrl
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${config.adminKey}`
-            },
-            body: formData
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            // 显示结果
+// 处理统一导入表单
+document.addEventListener('DOMContentLoaded', () => {
+    const unifiedImportForm = document.getElementById('unified-import-form');
+    if (unifiedImportForm) {
+        unifiedImportForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('unified-import-file');
+            const resultDiv = document.getElementById('unified-import-result');
+            
+            if (!fileInput.files.length) {
+                utils.showAlert('请选择文件', 'danger');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            
+            // 验证文件类型
+            if (!file.name.endsWith('.xlsx')) {
+                utils.showAlert('请选择 .xlsx 格式的文件', 'danger');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // 显示加载状态
             resultDiv.style.display = 'block';
             resultDiv.innerHTML = `
-                <div class="alert alert-success">
-                    <strong>导入成功!</strong><br>
-                    创建: ${result.details.created} 个<br>
-                    跳过: ${result.details.skipped} 个<br>
-                    总计: ${result.details.total} 个
-                    ${result.details.errors.length > 0 ? '<br><br><strong>错误:</strong><br>' + result.details.errors.join('<br>') : ''}
+                <div class="alert alert-warning">
+                    <div class="loading" style="margin-right: 10px;"></div>
+                    正在导入配置,请稍候...
                 </div>
             `;
             
-            // 刷新列表
-            if (currentImportType === 'providers') {
-                await loadProviders();
-            } else {
-                await loadModels();
+            try {
+                const response = await fetch('/api/admin/import/config/upload', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${config.adminKey}`
+                    },
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // 构建详细结果显示
+                    const providersResult = result.result.providers;
+                    const modelsResult = result.result.models;
+                    const associationsResult = result.result.associations;
+                    
+                    let html = `<div class="alert alert-success">
+                        <strong>✅ 配置导入成功!</strong><br><br>`;
+                    
+                    // Providers统计
+                    html += `<strong>📦 提供商:</strong><br>`;
+                    html += `• 创建: ${providersResult.created} 个<br>`;
+                    html += `• 跳过: ${providersResult.skipped} 个<br>`;
+                    html += `• 总计: ${providersResult.total} 个<br>`;
+                    if (providersResult.errors.length > 0) {
+                        html += `<div style="color: var(--danger-color); margin-top: 8px;">`;
+                        html += `⚠️ 错误 (${providersResult.errors.length}):<br>`;
+                        providersResult.errors.slice(0, 5).forEach(err => {
+                            html += `• 第${err.row}行 ${err.field}: ${err.error}<br>`;
+                        });
+                        if (providersResult.errors.length > 5) {
+                            html += `• ... 还有 ${providersResult.errors.length - 5} 个错误<br>`;
+                        }
+                        html += `</div>`;
+                    }
+                    html += `<br>`;
+                    
+                    // Models统计
+                    html += `<strong>🤖 模型:</strong><br>`;
+                    html += `• 创建: ${modelsResult.created} 个<br>`;
+                    html += `• 跳过: ${modelsResult.skipped} 个<br>`;
+                    html += `• 总计: ${modelsResult.total} 个<br>`;
+                    if (modelsResult.errors.length > 0) {
+                        html += `<div style="color: var(--danger-color); margin-top: 8px;">`;
+                        html += `⚠️ 错误 (${modelsResult.errors.length}):<br>`;
+                        modelsResult.errors.slice(0, 5).forEach(err => {
+                            html += `• 第${err.row}行 ${err.field}: ${err.error}<br>`;
+                        });
+                        if (modelsResult.errors.length > 5) {
+                            html += `• ... 还有 ${modelsResult.errors.length - 5} 个错误<br>`;
+                        }
+                        html += `</div>`;
+                    }
+                    html += `<br>`;
+                    
+                    // Associations统计
+                    html += `<strong>🔗 关联:</strong><br>`;
+                    html += `• 创建: ${associationsResult.created} 个<br>`;
+                    html += `• 跳过: ${associationsResult.skipped} 个<br>`;
+                    html += `• 总计: ${associationsResult.total} 个<br>`;
+                    if (associationsResult.errors.length > 0) {
+                        html += `<div style="color: var(--danger-color); margin-top: 8px;">`;
+                        html += `⚠️ 错误 (${associationsResult.errors.length}):<br>`;
+                        associationsResult.errors.slice(0, 5).forEach(err => {
+                            html += `• 第${err.row}行 ${err.field}: ${err.error}<br>`;
+                        });
+                        if (associationsResult.errors.length > 5) {
+                            html += `• ... 还有 ${associationsResult.errors.length - 5} 个错误<br>`;
+                        }
+                        html += `</div>`;
+                    }
+                    
+                    html += `</div>`;
+                    resultDiv.innerHTML = html;
+                    
+                    // 刷新列表
+                    utils.showAlert('配置导入成功,正在刷新列表...', 'success');
+                    await Promise.all([
+                        loadProviders(),
+                        loadModels()
+                    ]);
+                    
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-danger">
+                            <strong>❌ 导入失败!</strong><br>
+                            ${result.detail || result.message || '未知错误'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Unified import failed:', error);
+                resultDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>❌ 导入失败!</strong><br>
+                        ${error.message}
+                    </div>
+                `;
             }
-        } else {
-            resultDiv.style.display = 'block';
-            resultDiv.innerHTML = `
-                <div class="alert alert-danger">
-                    <strong>导入失败!</strong><br>
-                    ${result.detail || '未知错误'}
-                </div>
-            `;
-        }
-    } catch (error) {
-        console.error('Import failed:', error);
-        resultDiv.style.display = 'block';
-        resultDiv.innerHTML = `
-            <div class="alert alert-danger">
-                <strong>导入失败!</strong><br>
-                ${error.message}
-            </div>
-        `;
+        });
     }
 });
 

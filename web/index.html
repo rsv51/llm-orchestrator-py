@@ -516,12 +516,6 @@
                         <button class="btn btn-primary" onclick="showAddProviderModal()">
                             <span>➕</span> 添加提供商
                         </button>
-                        <button class="btn btn-success btn-sm" onclick="exportProviders()">
-                            <span>📥</span> 导出
-                        </button>
-                        <button class="btn btn-success btn-sm" onclick="showImportModal('providers')">
-                            <span>📤</span> 导入
-                        </button>
                     </div>
                 </div>
                 <div class="table-container">
@@ -552,12 +546,6 @@
                     <div style="display: flex; gap: 10px;">
                         <button class="btn btn-primary" onclick="showAddModelModal()">
                             <span>➕</span> 添加模型
-                        </button>
-                        <button class="btn btn-success btn-sm" onclick="exportModels()">
-                            <span>📥</span> 导出
-                        </button>
-                        <button class="btn btn-success btn-sm" onclick="showImportModal('models')">
-                            <span>📤</span> 导入
                         </button>
                     </div>
                 </div>
@@ -609,9 +597,10 @@
 
         <!-- Settings Tab -->
         <div id="settings" class="tab-content">
+            <!-- 密钥设置卡片 -->
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">系统设置</h3>
+                    <h3 class="card-title">密钥设置</h3>
                 </div>
                 <div class="form-group">
                     <label class="form-label">API 密钥</label>
@@ -622,6 +611,39 @@
                     <input type="password" class="form-control" id="admin-key" placeholder="输入管理员密钥">
                 </div>
                 <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+            </div>
+            
+            <!-- Excel 批量管理卡片 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">📊 Excel 批量管理</h3>
+                </div>
+                <p style="color: var(--text-secondary); margin-bottom: 20px;">
+                    统一管理提供商、模型和关联关系的批量导入导出功能
+                </p>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-success" onclick="exportAllConfig()">
+                        <span>📥</span> 导出所有配置
+                    </button>
+                    <button class="btn btn-primary" onclick="downloadConfigTemplate(false)">
+                        <span>📄</span> 下载空白模板
+                    </button>
+                    <button class="btn btn-primary" onclick="downloadConfigTemplate(true)">
+                        <span>📝</span> 下载带示例模板
+                    </button>
+                    <button class="btn btn-warning" onclick="showUnifiedImportModal()">
+                        <span>📤</span> 导入配置
+                    </button>
+                </div>
+                <div style="margin-top: 20px; padding: 16px; background: var(--bg-color); border-radius: 6px;">
+                    <h4 style="font-size: 16px; margin-bottom: 12px;">📌 功能说明</h4>
+                    <ul style="color: var(--text-secondary); font-size: 14px; line-height: 1.8;">
+                        <li><strong>导出所有配置:</strong> 将当前系统中的提供商、模型和关联关系导出到一个Excel文件(三个工作表)</li>
+                        <li><strong>下载模板:</strong> 获取标准格式的导入模板,可选择空白模板或带示例数据的模板</li>
+                        <li><strong>导入配置:</strong> 从Excel文件批量导入配置,支持跳过重复项和错误处理</li>
+                        <li><strong>三工作表架构:</strong> Providers、Models、Associations分离管理,通过名称关联</li>
+                    </ul>
+                </div>
             </div>
         </div>
     </div>
