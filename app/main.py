@@ -90,11 +90,11 @@ def create_app() -> FastAPI:
     # Setup middleware
     setup_middleware(app)
     
-    # Include routers
-    app.include_router(chat.router)
-    app.include_router(models.router)
-    app.include_router(admin.router)
-    app.include_router(excel.router)
+    # Include routers with /api prefix
+    app.include_router(chat.router, prefix="/api")
+    app.include_router(models.router, prefix="/api")
+    app.include_router(admin.router, prefix="/api")
+    app.include_router(excel.router, prefix="/api")
     
     # Mount static files for web UI
     web_dir = Path(__file__).parent.parent / "web"

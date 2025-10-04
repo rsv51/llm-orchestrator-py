@@ -198,9 +198,9 @@ class ExcelService:
             ws.append([
                 model.name,
                 provider.name,
-                mapping.provider_model_name,
-                'true' if mapping.supports_tools else 'false',
-                'true' if mapping.supports_vision else 'false',
+                mapping.provider_model,
+                'true' if mapping.tool_call else 'false',
+                'true' if mapping.image else 'false',
                 mapping.weight,
                 'true' if mapping.enabled else 'false'
             ])
@@ -506,7 +506,7 @@ class ExcelService:
                 query = select(ModelProvider).where(
                     ModelProvider.model_id == model_id,
                     ModelProvider.provider_id == provider_id,
-                    ModelProvider.provider_model_name == provider_model
+                    ModelProvider.provider_model == provider_model
                 )
                 result = await self.db.execute(query)
                 existing = result.scalar_one_or_none()
@@ -519,9 +519,9 @@ class ExcelService:
                 association = ModelProvider(
                     model_id=model_id,
                     provider_id=provider_id,
-                    provider_model_name=provider_model,
-                    supports_tools=str(row[3]).lower() == 'true' if row[3] else False,
-                    supports_vision=str(row[4]).lower() == 'true' if row[4] else False,
+                    provider_model=provider_model,
+                    tool_call=str(row[3]).lower() == 'true' if row[3] else True,
+                    image=str(row[4]).lower() == 'true' if row[4] else False,
                     weight=int(row[5]) if row[5] and str(row[5]).isdigit() else 100,
                     enabled=str(row[6]).lower() == 'true' if row[6] else True
                 )

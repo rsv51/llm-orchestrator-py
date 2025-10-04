@@ -113,7 +113,7 @@ async function loadDashboard() {
         await checkHealth();
         
         // 加载统计数据
-        const stats = await utils.request('/admin/stats?hours=24', { useAdmin: true });
+        const stats = await utils.request('/api/admin/stats?hours=24', { useAdmin: true });
         
         // 更新统计卡片
         document.getElementById('total-requests').textContent = utils.formatNumber(stats.total_requests || 0);
@@ -128,7 +128,7 @@ async function loadDashboard() {
 
 async function checkHealth() {
     try {
-        const health = await utils.request('/admin/health', { useAdmin: true });
+        const health = await utils.request('/api/admin/health', { useAdmin: true });
         
         const statusHtml = `
             <div style="margin-bottom: 20px;">
@@ -168,7 +168,7 @@ async function checkHealth() {
 // 提供商管理
 async function loadProviders() {
     try {
-        const providers = await utils.request('/admin/providers', { useAdmin: true });
+        const providers = await utils.request('/api/admin/providers', { useAdmin: true });
         
         const tbody = document.getElementById('providers-tbody');
         
@@ -209,7 +209,7 @@ async function loadProviders() {
 
 async function toggleProvider(id, enabled) {
     try {
-        await utils.request(`/admin/providers/${id}`, {
+        await utils.request(`/api/admin/providers/${id}`, {
             method: 'PATCH',  // 修复: 使用 PATCH 而不是 PUT
             useAdmin: true,
             body: JSON.stringify({ enabled })
@@ -225,7 +225,7 @@ async function toggleProvider(id, enabled) {
 // 获取提供商模型列表
 async function getProviderModels(providerId, providerName) {
     try {
-        const data = await utils.request(`/admin/providers/${providerId}/models`, { useAdmin: true });
+        const data = await utils.request(`/api/admin/providers/${providerId}/models`, { useAdmin: true });
         
         // 显示模型列表模态框
         showProviderModelsModal(data.models, providerId, providerName);
@@ -292,7 +292,7 @@ function copyModelName(modelName) {
 // 导入单个模型
 async function importSingleModel(providerId, modelName) {
     try {
-        const result = await utils.request(`/admin/providers/${providerId}/models/import`, {
+        const result = await utils.request(`/api/admin/providers/${providerId}/models/import`, {
             method: 'POST',
             useAdmin: true,
             body: JSON.stringify({ model_names: [modelName] })
@@ -311,7 +311,7 @@ async function importAllModels(providerId, models) {
     if (!confirm(`确定要导入全部 ${models.length} 个模型吗?`)) return;
     
     try {
-        const result = await utils.request(`/admin/providers/${providerId}/models/import`, {
+        const result = await utils.request(`/api/admin/providers/${providerId}/models/import`, {
             method: 'POST',
             useAdmin: true,
             body: JSON.stringify({ model_names: null })  // null = 导入全部
@@ -330,7 +330,7 @@ async function deleteProvider(id) {
     if (!confirm('确定要删除此提供商吗?')) return;
     
     try {
-        await utils.request(`/admin/providers/${id}`, {
+        await utils.request(`/api/admin/providers/${id}`, {
             method: 'DELETE',
             useAdmin: true
         });
@@ -365,7 +365,7 @@ document.getElementById('add-provider-form').addEventListener('submit', async (e
     };
     
     try {
-        await utils.request('/admin/providers', {
+        await utils.request('/api/admin/providers', {
             method: 'POST',
             useAdmin: true,
             body: JSON.stringify(data)
@@ -394,7 +394,7 @@ document.getElementById('add-model-form').addEventListener('submit', async (e) =
     };
     
     try {
-        await utils.request('/admin/models', {
+        await utils.request('/api/admin/models', {
             method: 'POST',
             useAdmin: true,
             body: JSON.stringify(data)
@@ -412,7 +412,7 @@ document.getElementById('add-model-form').addEventListener('submit', async (e) =
 // 模型管理
 async function loadModels() {
     try {
-        const models = await utils.request('/admin/models', { useAdmin: true });
+        const models = await utils.request('/api/admin/models', { useAdmin: true });
         
         const tbody = document.getElementById('models-tbody');
         
@@ -456,7 +456,7 @@ async function deleteModel(id) {
     if (!confirm('确定要删除此模型配置吗?')) return;
     
     try {
-        await utils.request(`/admin/models/${id}`, {
+        await utils.request(`/api/admin/models/${id}`, {
             method: 'DELETE',
             useAdmin: true
         });
@@ -471,7 +471,7 @@ async function deleteModel(id) {
 // 请求日志
 async function loadLogs() {
     try {
-        const response = await utils.request('/admin/logs?page=1&page_size=50', { useAdmin: true });
+        const response = await utils.request('/api/admin/logs?page=1&page_size=50', { useAdmin: true });
         
         const tbody = document.getElementById('logs-tbody');
         
@@ -631,7 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // 检查 API 连接
     try {
-        await utils.request('/health');
+        await utils.request('/api/health');
         document.getElementById('api-status').textContent = 'API 正常';
         document.getElementById('api-status').className = 'badge badge-success';
     } catch (error) {

@@ -61,7 +61,7 @@ async function loadData() {
 
 // Load Models
 async function loadModels() {
-    const response = await fetch(`${API_BASE}/admin/models`, {
+    const response = await fetch(`${API_BASE}/api/admin/models`, {
         headers: getHeaders()
     });
     
@@ -74,7 +74,7 @@ async function loadModels() {
 
 // Load Providers
 async function loadProviders() {
-    const response = await fetch(`${API_BASE}/admin/providers`, {
+    const response = await fetch(`${API_BASE}/api/admin/providers`, {
         headers: getHeaders()
     });
     
