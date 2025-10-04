@@ -87,7 +87,7 @@ async function loadProviders() {
 
 // Load Associations
 async function loadAssociations() {
-    const response = await fetch(`${API_BASE}/admin/model-providers`, {
+    const response = await fetch(`${API_BASE}/api/admin/model-providers`, {
         headers: getHeaders()
     });
     
@@ -106,7 +106,7 @@ async function loadStatuses() {
     const statusPromises = associations.map(async (assoc) => {
         try {
             const response = await fetch(
-                `${API_BASE}/admin/model-providers/${assoc.id}/status?limit=10`,
+                `${API_BASE}/api/admin/model-providers/${assoc.id}/status?limit=10`,
                 { headers: getHeaders() }
             );
             
@@ -301,7 +301,7 @@ async function deleteAssociation(id) {
     if (!confirm('确定要删除这个关联吗?')) return;
     
     try {
-        const response = await fetch(`${API_BASE}/admin/model-providers/${id}`, {
+        const response = await fetch(`${API_BASE}/api/admin/model-providers/${id}`, {
             method: 'DELETE',
             headers: getHeaders()
         });
@@ -336,9 +336,9 @@ async function handleSubmit(e) {
     };
     
     try {
-        const url = editingId 
-            ? `${API_BASE}/admin/model-providers/${editingId}`
-            : `${API_BASE}/admin/model-providers`;
+        const url = editingId
+            ? `${API_BASE}/api/admin/model-providers/${editingId}`
+            : `${API_BASE}/api/admin/model-providers`;
         
         const method = editingId ? 'PATCH' : 'POST';
         
