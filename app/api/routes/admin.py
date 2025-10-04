@@ -518,7 +518,7 @@ async def get_system_stats(
         # Get overall stats
         query = select(
             func.count(RequestLog.id).label("total"),
-            func.sum(func.case((RequestLog.status_code == 200, 1), else_=0)).label("success"),
+            func.sum(func.case((RequestLog.status_code == 200, 1))).label("success"),
             func.avg(RequestLog.latency_ms).label("avg_latency")
         ).where(RequestLog.created_at >= since)
         
@@ -537,7 +537,7 @@ async def get_system_stats(
                 Provider.id,
                 Provider.name,
                 func.count(RequestLog.id).label("total"),
-                func.sum(func.case((RequestLog.status_code == 200, 1), else_=0)).label("success"),
+                func.sum(func.case((RequestLog.status_code == 200, 1))).label("success"),
                 func.avg(RequestLog.latency_ms).label("avg_latency"),
                 func.sum(func.coalesce(RequestLog.total_tokens, 0)).label("total_tokens"),
                 func.sum(func.coalesce(RequestLog.cost, 0)).label("total_cost")

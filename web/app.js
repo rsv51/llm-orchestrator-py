@@ -509,18 +509,66 @@ async function loadLogs() {
 // Excel 导入导出功能
 let currentImportType = 'providers';
 
-function exportProviders() {
-    // 使用相对路径自动适配域名
-    const url = '/admin/excel/export/providers';
-    window.open(url, '_blank');
-    utils.showAlert('正在下载提供商列表...', 'success');
+async function exportProviders() {
+    try {
+        const response = await fetch('/admin/excel/export/providers', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${config.adminKey}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`导出失败: ${response.status}`);
+        }
+        
+        // 创建 Blob 并下载
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `providers_${new Date().toISOString().split('T')[0]}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        utils.showAlert('提供商列表下载成功', 'success');
+    } catch (error) {
+        console.error('Export failed:', error);
+        utils.showAlert('导出失败: ' + error.message, 'danger');
+    }
 }
 
-function exportModels() {
-    // 使用相对路径自动适配域名
-    const url = '/admin/excel/export/models';
-    window.open(url, '_blank');
-    utils.showAlert('正在下载模型列表...', 'success');
+async function exportModels() {
+    try {
+        const response = await fetch('/admin/excel/export/models', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${config.adminKey}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`导出失败: ${response.status}`);
+        }
+        
+        // 创建 Blob 并下载
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `models_${new Date().toISOString().split('T')[0]}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        utils.showAlert('模型列表下载成功', 'success');
+    } catch (error) {
+        console.error('Export failed:', error);
+        utils.showAlert('导出失败: ' + error.message, 'danger');
+    }
 }
 
 function showImportModal(type) {
