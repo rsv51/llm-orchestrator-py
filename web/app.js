@@ -124,9 +124,12 @@ async function loadDashboard() {
         
         // 更新统计卡片
         document.getElementById('total-requests').textContent = utils.formatNumber(stats.total_requests || 0);
-        document.getElementById('success-rate').textContent = ((stats.success_rate || 0) * 100).toFixed(1) + '%';
-        document.getElementById('avg-latency').textContent = (stats.avg_latency || 0).toFixed(0) + 'ms';
-        document.getElementById('total-tokens').textContent = utils.formatNumber(stats.total_tokens || 0);
+        document.getElementById('success-rate').textContent = (stats.success_rate || 0).toFixed(1) + '%';
+        document.getElementById('avg-latency').textContent = (stats.avg_response_time_ms || 0).toFixed(0) + 'ms';
+        
+        // 计算总 Token 数(从各个 Provider 统计中汇总)
+        const totalTokens = stats.providers?.reduce((sum, p) => sum + (p.total_tokens || 0), 0) || 0;
+        document.getElementById('total-tokens').textContent = utils.formatNumber(totalTokens);
         
     } catch (error) {
         console.error('Failed to load dashboard:', error);

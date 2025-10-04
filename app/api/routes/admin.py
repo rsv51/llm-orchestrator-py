@@ -436,6 +436,33 @@ async def get_system_health(
     logger.info("System health check requested")
     
     try:
+        # Get all providers first
+        providers_query = select(Provider).order_by(Provider.priority.desc())
+        providers_result = await db.execute(providers_query)
+        all_providers = providers_result.scalars().all()
+        
+        # Ensure ProviderHealth records exist for all providers
+        for provider in all_providers:
+            health_query = select(ProviderHealth).where(ProviderHealth.provider_id == provider.id)
+            health_result = await db.execute(health_query)
+            health_record = health_result.scalar_one_or_none()
+            
+            if not health_record:
+                # Create default health record
+                health_record = ProviderHealth(
+                    provider_id=provider.id,
+                    is_healthy=True,
+                    response_time_ms=0.0,
+                    error_message=None,
+                    last_check=datetime.utcnow(),
+                    consecutive_failures=0,
+                    success_rate=100.0
+                )
+                db.add(health_record)
+                logger.info(f"Created health record for provider {provider.name}")
+        
+        await db.commit()
+        
         # Get provider health statuses
         query = (
             select(ProviderHealth, Provider)

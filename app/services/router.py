@@ -3,7 +3,7 @@ Request router for handling LLM API requests with failover.
 """
 import time
 import asyncio
-from typing import Optional, AsyncGenerator
+from typing import Optional, AsyncGenerator, List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import RedisCache
@@ -47,17 +47,22 @@ class RequestRouter:
         request: ChatCompletionRequest,
         request_id: str,
         api_key: Optional[str] = None,
-        client_ip: Optional[str] = None
+        client_ip: Optional[str] = None,
+        fallback_providers: Optional[List[str]] = None
     ) -> ChatCompletionResponse:
         """
-        Route request to provider with failover support.
+        Route request to provider with intelligent failover support.
+        
+        Tries the primary provider first, then automatically falls back to
+        alternative providers if the primary fails.
         
         Args:
-            provider_name: Target provider name
+            provider_name: Primary provider name
             request: Chat completion request
             request_id: Unique request ID
             api_key: User API key
             client_ip: Client IP address
+            fallback_providers: Ordered list of fallback provider names
             
         Returns:
             Chat completion response
@@ -66,20 +71,104 @@ class RequestRouter:
             Exception: If all providers fail
         """
         start_time = time.time()
-        last_error = None
+        
+        # Build provider list: primary + fallbacks
+        provider_names = [provider_name]
+        if fallback_providers:
+            provider_names.extend(fallback_providers)
+        
+        # Try each provider in sequence
+        last_errors = {}
+        for current_provider_name in provider_names:
+            try:
+                logger.info(
+                    f"Attempting provider: {current_provider_name}",
+                    extra={
+                        "request_id": request_id,
+                        "provider": current_provider_name,
+                        "is_fallback": current_provider_name != provider_name
+                    }
+                )
+                
+                response = await self._try_provider(
+                    provider_name=current_provider_name,
+                    request=request,
+                    request_id=request_id,
+                    start_time=start_time,
+                    api_key=api_key,
+                    client_ip=client_ip
+                )
+                
+                # Success! Add provider info and return
+                response.provider = current_provider_name
+                return response
+            
+            except Exception as e:
+                last_errors[current_provider_name] = str(e)
+                logger.warning(
+                    f"Provider {current_provider_name} failed: {str(e)}",
+                    extra={
+                        "request_id": request_id,
+                        "provider": current_provider_name,
+                        "error": str(e)
+                    }
+                )
+                # Continue to next provider
+        
+        # All providers failed
+        error_summary = "; ".join([f"{name}: {err}" for name, err in last_errors.items()])
+        logger.error(
+            f"All providers failed for request {request_id}",
+            extra={
+                "request_id": request_id,
+                "providers_tried": list(last_errors.keys()),
+                "errors": last_errors
+            }
+        )
+        
+        raise Exception(f"All providers failed. Errors: {error_summary}")
+    
+    async def _try_provider(
+        self,
+        provider_name: str,
+        request: ChatCompletionRequest,
+        request_id: str,
+        start_time: float,
+        api_key: Optional[str],
+        client_ip: Optional[str]
+    ) -> ChatCompletionResponse:
+        """
+        Try a single provider with retries.
+        
+        Args:
+            provider_name: Provider name
+            request: Chat completion request
+            request_id: Request ID
+            start_time: Request start time
+            api_key: User API key
+            client_ip: Client IP
+            
+        Returns:
+            Chat completion response
+            
+        Raises:
+            Exception: If all retry attempts fail
+        """
         retry_count = request.retry_count or settings.max_retry_count
         
         # Get provider from database
         provider = await self._get_provider(provider_name)
         if not provider:
-            raise Exception(f"Provider {provider_name} not found")
+            raise Exception(f"Provider {provider_name} not found or disabled")
         
-        # Try main provider with retries
+        last_error = None
+        
+        # Try with retries (same provider, different attempts)
         for attempt in range(retry_count + 1):
             try:
-                logger.info(
-                    f"Routing request to {provider_name} (attempt {attempt + 1}/{retry_count + 1})",
-                    extra={"request_id": request_id, "provider": provider_name}
+                logger.debug(
+                    f"Provider {provider_name} attempt {attempt + 1}/{retry_count + 1}",
+                    extra={"request_id": request_id}
                 )
                 
                 # Create provider instance
@@ -104,21 +193,13 @@ class RequestRouter:
                     client_ip=client_ip
                 )
                 
-                # Add provider info to response
-                response.provider = provider_name
-                
                 return response
             
             except Exception as e:
                 last_error = e
-                logger.warning(
-                    f"Request failed on {provider_name}: {str(e)}",
-                    extra={
-                        "request_id": request_id,
-                        "provider": provider_name,
-                        "attempt": attempt + 1,
-                        "error": str(e)
-                    }
+                logger.debug(
+                    f"Attempt {attempt + 1} failed: {str(e)}",
+                    extra={"request_id": request_id, "provider": provider_name}
                 )
                 
                 # Wait before retry (exponential backoff)
@@ -126,7 +207,7 @@ class RequestRouter:
                     wait_time = min(2 ** attempt, 10)  # Max 10 seconds
                     await asyncio.sleep(wait_time)
         
-        # All attempts failed
+        # All retries failed for this provider
         latency_ms = int((time.time() - start_time) * 1000)
         await self._log_failed_request(
             provider_id=provider.id,
@@ -137,7 +218,7 @@ class RequestRouter:
             client_ip=client_ip
         )
         
-        raise Exception(f"All retry attempts failed: {str(last_error)}")
+        raise Exception(f"Provider {provider_name} failed after {retry_count + 1} attempts: {str(last_error)}")
     
     async def route_streaming_request(
         self,

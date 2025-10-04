@@ -110,7 +110,7 @@ async def create_chat_completion(
             )
             logger.info(f"Load balancer selected provider: {provider_name}")
         
-        # Route request to provider
+        # Route request to provider with failover support
         if request.stream:
             # Handle streaming response
             return StreamingResponse(
@@ -129,13 +129,14 @@ async def create_chat_completion(
                 }
             )
         else:
-            # Handle non-streaming response
+            # Handle non-streaming response with failover
             response = await router_service.route_request(
                 provider_name=provider_name,
                 request=request,
                 request_id=request_id,
                 api_key=api_key,
-                client_ip=client_ip
+                client_ip=client_ip,
+                fallback_providers=request.fallback_providers
             )
             
             # Calculate latency

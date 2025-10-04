@@ -92,6 +92,36 @@ class LoadBalancer:
         
         return selected
     
+    async def get_all_healthy_providers(self, model: Optional[str] = None) -> List[str]:
+        """
+        Get all healthy provider names for failover.
+        
+        Args:
+            model: Model name (optional, for future model-specific filtering)
+            
+        Returns:
+            List of healthy provider names ordered by priority and weight
+        """
+        # Try cache first
+        cache_key = f"balancer:providers:{model or 'default'}"
+        cached_providers = await self.cache.get(cache_key)
+        
+        if cached_providers:
+            providers_data = cached_providers
+        else:
+            providers_data = await self._get_healthy_providers()
+            if providers_data:
+                await self.cache.set(cache_key, providers_data, ttl=30)
+        
+        # Return provider names sorted by priority (desc) then weight (desc)
+        sorted_providers = sorted(
+            providers_data,
+            key=lambda p: (p["priority"], p["weight"]),
+            reverse=True
+        )
+        
+        return [p["name"] for p in sorted_providers]
+    
     async def _get_healthy_providers(self) -> List[Dict]:
         """
         Get list of healthy providers from database.

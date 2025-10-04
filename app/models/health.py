@@ -20,6 +20,13 @@ class ProviderHealth(Base):
     provider_id = Column(Integer, ForeignKey("providers.id"), unique=True, nullable=False)
     
     is_healthy = Column(Boolean, default=True, index=True)
+    response_time_ms = Column(Float, default=0.0)
+    error_message = Column(Text)
+    last_check = Column(DateTime, default=datetime.utcnow, index=True)
+    consecutive_failures = Column(Integer, default=0)
+    success_rate = Column(Float, default=100.0)
+    
+    # Legacy fields for backward compatibility
     error_count = Column(Integer, default=0)
     last_error = Column(Text)
     last_status_code = Column(Integer)
